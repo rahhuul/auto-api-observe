@@ -1,0 +1,7 @@
+src/
+examples/
+tsconfig*.json
+.gitignore
+node_modules/
+coverage/
+*.map
