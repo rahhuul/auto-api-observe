@@ -58,7 +58,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/rahhuul/auto-api-observe.git"
+    "url": "git+https://github.com/rahhuul/auto-api-observe.git"
   },
   "bugs": {
     "url": "https://github.com/rahhuul/auto-api-observe/issues"
