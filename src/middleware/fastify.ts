@@ -64,6 +64,8 @@ export function fastifyObservability(
     enableMetrics = true,
     skipRoutes = [],
     traceHeader = 'x-trace-id',
+    maxRoutes = 1000,
+    sampleRate = 1.0,
     onRequest,
     onResponse,
   } = options;
@@ -131,8 +133,8 @@ export function fastifyObservability(
       ...context.customFields,
     };
 
-    if (logger !== false) logger(entry);
-    if (enableMetrics) recordMetric(entry);
+    if (logger !== false && (sampleRate >= 1.0 || Math.random() < sampleRate)) logger(entry);
+    if (enableMetrics) recordMetric(entry, maxRoutes);
     if (onResponse) onResponse(entry);
   });
 

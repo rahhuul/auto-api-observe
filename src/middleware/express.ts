@@ -35,6 +35,8 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
     enableMetrics = true,
     skipRoutes = [],
     traceHeader = 'x-trace-id',
+    maxRoutes = 1000,
+    sampleRate = 1.0,
     onRequest,
     onResponse,
   } = options;
@@ -95,12 +97,14 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
           ...context.customFields,
         };
 
-        if (logger !== false) {
+        // sampleRate < 1.0 means only log a fraction of requests.
+        // Metrics are always recorded so counts stay accurate.
+        if (logger !== false && (sampleRate >= 1.0 || Math.random() < sampleRate)) {
           logger(entry);
         }
 
         if (enableMetrics) {
-          recordMetric(entry);
+          recordMetric(entry, maxRoutes);
         }
 
         if (onResponse) {

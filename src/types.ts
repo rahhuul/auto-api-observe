@@ -31,6 +31,25 @@ export interface ObservabilityOptions {
   traceHeader?: string;
 
   /**
+   * Maximum number of distinct routes tracked in the in-memory metrics map.
+   * Once the limit is reached, new unseen routes are silently ignored.
+   * Prevents unbounded memory growth when many unique paths hit the server
+   * (e.g. bots scanning `/users/1`, `/users/2` … as separate routes).
+   * @default 1000
+   */
+  maxRoutes?: number;
+
+  /**
+   * Fraction of requests to log — between 0.0 (log nothing) and 1.0 (log
+   * all, the default). Useful at very high throughput where logging every
+   * request is too expensive. Metrics are always recorded regardless of this
+   * value so counts stay accurate.
+   * @default 1.0
+   * @example 0.1  // log only ~10 % of requests
+   */
+  sampleRate?: number;
+
+  /**
    * Called at the start of every tracked request with the initial context.
    */
   onRequest?: (context: RequestContext) => void;

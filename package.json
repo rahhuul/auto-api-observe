@@ -1,6 +1,6 @@
 {
   "name": "auto-api-observe",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zero-config observability middleware for Express and Fastify — request tracing, slow API detection, metrics, and structured JSON logs.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

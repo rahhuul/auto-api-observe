@@ -19,7 +19,7 @@ const routeMap = new Map<string, {
   statusCodes: Record<number, number>;
 }>();
 
-export function recordMetric(entry: LogEntry): void {
+export function recordMetric(entry: LogEntry, maxRoutes = 1000): void {
   totalRequests++;
 
   if (entry.status >= 500) {
@@ -38,6 +38,9 @@ export function recordMetric(entry: LogEntry): void {
   let route = routeMap.get(key);
 
   if (!route) {
+    // Stop tracking new routes once the cap is reached — prevents unbounded
+    // memory growth when bots or scanners hit many unique paths.
+    if (routeMap.size >= maxRoutes) return;
     route = {
       count: 0,
       totalLatency: 0,
