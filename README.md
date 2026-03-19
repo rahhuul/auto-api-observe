@@ -1,28 +1,52 @@
-# auto-api-observe
+<h1 align="center">auto-api-observe</h1>
 
-> Zero-config observability middleware for Express and Fastify.  
-> Add structured JSON logs, distributed trace IDs, slow-request detection, DB call counting, and in-memory metrics with a single line.
+<p align="center">
+  <strong>API observability for Express & Fastify in 1 line of code.</strong><br/>
+  Zero config. Zero dependencies. Auto DB instrumentation. Cloud dashboard included.
+</p>
 
-[![npm version](https://img.shields.io/npm/v/auto-api-observe.svg)](https://www.npmjs.com/package/auto-api-observe)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://www.npmjs.com/package/auto-api-observe"><img src="https://img.shields.io/npm/v/auto-api-observe.svg?style=flat-square&color=cb3837" alt="npm version" /></a>
+  <a href="https://www.npmjs.com/package/auto-api-observe"><img src="https://img.shields.io/npm/dm/auto-api-observe.svg?style=flat-square&color=blue" alt="npm downloads" /></a>
+  <a href="https://github.com/rahhuul/auto-api-observe"><img src="https://img.shields.io/github/stars/rahhuul/auto-api-observe?style=flat-square&color=yellow" alt="GitHub stars" /></a>
+  <a href="https://github.com/rahhuul/auto-api-observe/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
+  <a href="https://apilens.rest"><img src="https://img.shields.io/badge/dashboard-apilens.rest-8B5CF6?style=flat-square" alt="Dashboard" /></a>
+</p>
 
 ---
 
-## Features
+## The Problem
 
-| Feature | Details |
-|---|---|
-| **Structured JSON logs** | Every response emits a clean JSON entry |
-| **Distributed trace IDs** | Auto-generated UUID per request, forwarded via `x-trace-id` header |
-| **Slow API detection** | Requests above a configurable threshold are flagged with `slow: true` |
-| **DB call counting** | Call `trackDbCall()` anywhere in your async chain — no config needed |
-| **In-memory metrics** | Aggregated per-route stats accessible via `getMetrics()` |
-| **Custom fields** | Attach arbitrary data to any request log entry via `addField()` |
-| **High throughput** | Buffered async logger, compact JSON — benchmarked at 600k+ req/min |
-| **Sampling** | Log only a fraction of requests via `sampleRate` at extreme volume |
-| **Memory safe** | `maxRoutes` cap prevents unbounded map growth from bot traffic |
-| **TypeScript-first** | Full type definitions included |
-| **Zero dependencies** | Pure Node.js — no runtime dependencies |
+You ship an Express/Fastify API. Then you need to know: which routes are slow? What's your error rate? How many DB queries per request? Is that new endpoint even being used?
+
+Datadog costs $23/host/month. New Relic wants your credit card. Grafana takes an afternoon to configure.
+
+## The Solution
+
+```js
+app.use(require('auto-api-observe')());  // done.
+```
+
+Every request is now tracked with structured JSON logs, trace IDs, latency, auto DB profiling, and slow request detection.
+
+**Want a dashboard?** Add your API key and see everything at [apilens.rest](https://apilens.rest):
+
+```js
+app.use(require('auto-api-observe')({ apiKey: 'sk_...' }));
+```
+
+---
+
+## Why auto-api-observe?
+
+| Feature | **auto-api-observe** | Datadog | New Relic | Sentry |
+|---|:---:|:---:|:---:|:---:|
+| Setup time | **10 seconds** | 30+ min | 30+ min | 15+ min |
+| Lines of code | **1** | 20+ | 15+ | 10+ |
+| Dependencies | **0** | 50+ | 40+ | 30+ |
+| Free tier | **Free during beta** | 14-day trial | 100GB/mo | 5k events |
+| Auto DB tracking | **8 libraries** | Custom setup | Custom setup | No |
+| Config required | **None** | Agent + YAML | Agent + config | DSN + config |
 
 ---
 
@@ -32,40 +56,68 @@
 npm install auto-api-observe
 ```
 
-Express and Fastify are optional peer dependencies — install whichever you use.
-
 ---
 
-## Quick start
+## Quick Start
 
 ### Express
 
 ```js
 const express = require('express');
-const observability = require('auto-api-observe');
+const observe = require('auto-api-observe');
 
 const app = express();
+app.use(observe());
 
-app.use(observability()); // ← that's it
-
-app.get('/users', async (req, res) => {
-  res.json({ users: [] });
-});
-
+app.get('/users', (req, res) => res.json({ users: [] }));
 app.listen(3000);
 ```
 
-**Output for every request:**
+### Fastify
+
+```js
+const fastify = require('fastify')();
+const { fastifyObservability } = require('auto-api-observe');
+
+await fastify.register(fastifyObservability);
+
+fastify.get('/users', async () => ({ users: [] }));
+await fastify.listen({ port: 3000 });
+```
+
+### With Cloud Dashboard
+
+```js
+app.use(observe({
+  apiKey: 'sk_...',  // get one free at apilens.rest
+}));
+```
+
+---
+
+## What You Get
+
+Every request automatically outputs:
 
 ```json
 {
-  "timestamp": "2026-03-05T12:00:00.000Z",
-  "traceId": "a1b2c3d4-...",
+  "timestamp": "2026-03-20T12:00:00.000Z",
+  "traceId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "method": "GET",
-  "route": "/users",
+  "route": "/api/users",
+  "path": "/api/users",
   "status": 200,
-  "latencyMs": "120ms",
-  "dbCalls": 0,
+  "latency": 85,
+  "latencyMs": "85ms",
+  "dbCalls": {
+    "calls": 2,
+    "totalTime": 45,
+    "slowestQuery": 30,
+    "queries": [
+      { "query": "SELECT * FROM users WHERE active = ?", "source": "pg", "queryTime": 30 },
+      { "query": "SELECT COUNT(*) FROM sessions WHERE user_id = ?", "source": "pg", "queryTime": 15 }
+    ]
+  },
   "slow": false,
   "ip": "127.0.0.1"
 }
@@ -73,66 +125,93 @@ app.listen(3000);
 
 ---
 
-### Fastify
+## Auto DB Instrumentation (v1.2.0)
+
+No code changes needed. The middleware automatically patches these libraries at startup:
+
+- **pg** (node-postgres)
+- **mysql2**
+- **mongoose** (MongoDB)
+- **@prisma/client**
+- **knex**
+- **sequelize**
+- **ioredis** (Redis)
+- **better-sqlite3**
+
+For each query you get:
+- Masked SQL string (values replaced with `?` for security)
+- Execution time in milliseconds
+- Source library name
+- Per-request aggregates (total calls, total time, slowest query)
 
 ```js
-const Fastify = require('fastify');
-const { fastifyObservability } = require('auto-api-observe');
+// No changes needed — just use your DB libraries as normal
+app.get('/orders', async (req, res) => {
+  const orders = await db.query('SELECT * FROM orders WHERE user_id = $1', [req.user.id]);
+  const products = await db.query('SELECT * FROM products WHERE id = ANY($1)', [orders.map(o => o.product_id)]);
+  res.json({ orders, products });
+});
+// Log will automatically show: dbCalls: { calls: 2, totalTime: 45, queries: [...] }
+```
 
-const fastify = Fastify();
+Disable auto-instrumentation if needed:
 
-await fastify.register(fastifyObservability); // ← that's it
-
-fastify.get('/products', async () => ({ products: [] }));
-
-await fastify.listen({ port: 3000 });
+```js
+app.use(observe({ autoInstrument: false }));
 ```
 
 ---
 
-## Tracking DB calls
+## Cloud Dashboard
 
-Use `trackDbCall()` anywhere in your async request chain.  
-It automatically finds the right request context via `AsyncLocalStorage` — no need to pass anything explicitly.
-
-```js
-const { trackDbCall } = require('auto-api-observe');
-
-async function getUser(id) {
-  trackDbCall(); // ← increments dbCalls for the current request
-  return db.query('SELECT * FROM users WHERE id = ?', [id]);
-}
-```
-
-The log output will include `"dbCalls": 3` when the route makes 3 queries:
-
-```json
-{
-  "route": "/users",
-  "latencyMs": "120ms",
-  "dbCalls": 3,
-  "status": 200
-}
-```
-
-You can also wrap an entire query helper in one call:
+Sign up free at [apilens.rest](https://apilens.rest) and add your API key:
 
 ```js
-trackDbCall(3); // count 3 calls at once
+app.use(observe({ apiKey: process.env.APILENS_KEY }));
 ```
+
+**What you see in the dashboard:**
+
+- **Overview** — total requests, error rate, P95 latency, 6 interactive charts
+- **All Requests** — every request with full details, DB queries, filters, search
+- **Routes** — per-route breakdown (calls, avg latency, P95, errors, slow count)
+- **Errors** — paginated 4xx/5xx log with error timeline and top error routes
+- **Slow Requests** — latency distribution histogram
+- **Database** — query profiling, N+1 detection, slow queries, source distribution
+- **Traces** — distributed trace waterfall visualization
+- **Live Tail** — real-time SSE stream with method/status/route filters
+- **Usage** — daily quota tracking
+- **Alerts** — email or Slack when error rate or latency spikes
+- **Team** — invite collaborators to your project
+
+> **Free during beta** — all features included, no credit card.
 
 ---
 
-## Adding custom fields
+## Features
 
-Attach extra data to the current request's log entry from anywhere in your code:
+- **Structured JSON logs** — every response emits a clean JSON entry
+- **Distributed trace IDs** — auto-generated UUID, forwarded via `x-trace-id`
+- **Auto DB profiling** — patches 8 DB libraries, per-query timing and masked SQL
+- **Slow request detection** — configurable threshold (default 1000ms)
+- **In-memory metrics** — aggregated per-route stats via `getMetrics()`
+- **Custom fields** — attach arbitrary data with `addField()`
+- **Cloud dashboard** — charts, errors, traces, alerts at apilens.rest
+- **High throughput** — buffered async logger, 600k+ req/min
+- **Sampling** — `sampleRate` for extreme volume
+- **Memory safe** — `maxRoutes` cap prevents unbounded growth
+- **TypeScript-first** — full type definitions
+- **Zero dependencies** — pure Node.js
+
+---
+
+## Custom Fields
 
 ```js
 const { addField } = require('auto-api-observe');
 
 app.get('/orders', async (req, res) => {
-  const orders = await getOrders(req.user.id);
-  addField('userId', req.user.id);   // appears in the log entry
+  addField('userId', req.user.id);
   addField('orderCount', orders.length);
   res.json(orders);
 });
@@ -140,111 +219,73 @@ app.get('/orders', async (req, res) => {
 
 ---
 
-## Metrics
+## Manual DB Tracking
 
-Access aggregated in-memory stats at any time:
+If you prefer manual tracking over auto-instrumentation:
+
+```js
+const { trackDbCall, recordDbQuery } = require('auto-api-observe');
+
+// Simple counter
+trackDbCall();
+
+// Rich tracking
+recordDbQuery({
+  query: 'SELECT * FROM users WHERE id = ?',
+  source: 'pg',
+  queryTime: 12,
+});
+```
+
+---
+
+## Metrics Endpoint
 
 ```js
 const { getMetrics } = require('auto-api-observe');
 
-app.get('/metrics', (req, res) => {
-  res.json(getMetrics());
-});
+app.get('/metrics', (req, res) => res.json(getMetrics()));
 ```
 
-**Response shape:**
-
-```json
-{
-  "totalRequests": 142,
-  "successRequests": 135,
-  "clientErrorRequests": 3,
-  "errorRequests": 4,
-  "slowRequests": 2,
-  "uptime": 3600,
-  "startedAt": "2026-03-05T08:00:00.000Z",
-  "routes": {
-    "GET /users": {
-      "count": 80,
-      "avgLatency": 95,
-      "minLatency": 12,
-      "maxLatency": 1400,
-      "errors": 0,
-      "slowCount": 1,
-      "statusCodes": { "200": 80 }
-    }
-  }
-}
-```
-
-Reset metrics (useful in tests):
-
-```js
-const { resetMetrics } = require('auto-api-observe');
-resetMetrics();
-```
+Returns per-route aggregates: count, avg/min/max latency, errors, slow count, status codes.
 
 ---
 
-## Options
+## Distributed Tracing
 
-All options are optional — zero config required.
+Trace IDs propagate automatically across services:
+
+```
+Service A (generates traceId abc-123)
+  → Service B (reads x-trace-id, reuses abc-123)
+    → Service C (same ID — full chain visible in logs)
+```
+
+Access in your handler: `req.traceId`
+
+---
+
+## All Options
 
 ```ts
-observability({
-  slowThreshold: 1000,       // ms — requests above this are flagged slow (default: 1000)
-  logger: myLoggerFn,        // custom log function, or `false` to silence logs
-  enableMetrics: true,       // collect in-memory metrics (default: true)
-  skipRoutes: ['/health'],   // skip these routes entirely (string prefix or RegExp)
-  traceHeader: 'x-trace-id', // header used for trace ID propagation (default: 'x-trace-id')
-  maxRoutes: 1000,           // cap on distinct routes tracked in metrics (default: 1000)
-  sampleRate: 1.0,           // fraction of requests to log, 0.0–1.0 (default: 1.0 = all)
-  onRequest: (ctx) => {},    // called at the start of each tracked request
-  onResponse: (entry) => {}, // called after each tracked response
-});
-```
+observe({
+  // Local
+  slowThreshold: 1000,        // ms — flag requests above this
+  logger: console.log,        // custom log fn, or `false` to silence
+  enableMetrics: true,        // collect in-memory metrics
+  skipRoutes: ['/health'],    // skip routes (string prefix or RegExp)
+  traceHeader: 'x-trace-id', // header for trace ID propagation
+  maxRoutes: 1000,            // cap on distinct routes in metrics
+  sampleRate: 1.0,            // 0.0–1.0, fraction to log
+  autoInstrument: true,       // auto-patch DB libraries
+  onRequest: (ctx) => {},     // called at start of each request
+  onResponse: (entry) => {},  // called after each response
 
-### Custom logger
-
-Supply any function that accepts a `LogEntry`:
-
-```js
-const { createExpressMiddleware } = require('auto-api-observe');
-
-app.use(createExpressMiddleware({
-  logger: (entry) => {
-    // Ship to Datadog, Loki, CloudWatch, etc.
-    myLogShipper.send(entry);
-  },
-}));
-```
-
-Disable console output entirely:
-
-```js
-app.use(observability({ logger: false }));
-```
-
----
-
-## Distributed tracing
-
-Every request automatically gets a `traceId`. If an upstream service passes the `x-trace-id` header, the same ID is used (enabling distributed tracing across services).
-
-The trace ID is also set on the response header so downstream services can propagate it.
-
-```
-→ Service A  (generates traceId: abc-123, sets x-trace-id: abc-123)
-→ Service B  (reads x-trace-id: abc-123, uses same ID in its logs)
-→ Service C  (same)
-```
-
-Access the trace ID inside a request handler:
-
-```js
-app.get('/items', (req, res) => {
-  console.log(req.traceId); // 'abc-123'
-  res.json({});
+  // Cloud dashboard (apilens.rest)
+  apiKey: 'sk_...',           // enables remote shipping
+  endpoint: 'https://...',    // override for self-hosted
+  flushInterval: 5000,        // ms between batch flushes
+  flushSize: 100,             // flush when queue hits this size
 });
 ```
 
@@ -252,60 +293,32 @@ app.get('/items', (req, res) => {
 
 ## TypeScript
 
-Full types are exported:
-
 ```ts
-import observability, {
+import observe, {
   ObservabilityOptions,
   LogEntry,
+  DbCalls,
+  DbQuery,
   Metrics,
   trackDbCall,
+  recordDbQuery,
   addField,
   getMetrics,
+  autoInstrument,
 } from 'auto-api-observe';
-
-const options: ObservabilityOptions = {
-  slowThreshold: 500,
-  onResponse: (entry: LogEntry) => {
-    if (entry.slow) alertTeam(entry);
-  },
-};
-
-app.use(observability(options));
 ```
 
 ---
 
-## Examples
+## Contributing
+
+Contributions welcome! Please open an issue first to discuss.
 
 ```bash
-# Express (basic)
-npm run example:express
-
-# Fastify
-npm run example:fastify
-```
-
----
-
-## Log entry shape
-
-```ts
-interface LogEntry {
-  timestamp: string;    // ISO-8601
-  traceId: string;      // UUID v4
-  method: string;       // 'GET', 'POST', …
-  route: string;        // '/users/:id'  (matched pattern)
-  path: string;         // '/users/42'   (raw URL)
-  status: number;       // HTTP status code
-  latency: number;      // milliseconds (number)
-  latencyMs: string;    // '42ms'  (human-readable)
-  dbCalls: number;      // tracked via trackDbCall()
-  slow: boolean;        // true when latency > slowThreshold
-  ip?: string;
-  userAgent?: string;
-  [key: string]: unknown; // custom fields from addField()
-}
+git clone https://github.com/rahhuul/auto-api-observe.git
+cd auto-api-observe
+npm install
+npm test      # 44 tests
 ```
 
 ---
@@ -313,3 +326,12 @@ interface LogEntry {
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  Built by <a href="https://github.com/rahhuul">@rahhuul</a> ·
+  <a href="https://apilens.rest">apilens.rest</a> ·
+  <a href="https://github.com/rahhuul/auto-api-observe">GitHub</a> ·
+  <a href="https://www.npmjs.com/package/auto-api-observe">npm</a>
+</p>
