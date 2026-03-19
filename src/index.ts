@@ -21,7 +21,8 @@
 export { createExpressMiddleware } from './middleware/express';
 export { fastifyObservability } from './middleware/fastify';
 export { getMetrics, resetMetrics } from './core/metrics';
-export { trackDbCall, addField, getContext } from './core/storage';
+export { trackDbCall, recordDbQuery, addField, getContext } from './core/storage';
+export { autoInstrument } from './core/instrument';
 
 export type {
   ObservabilityOptions,
@@ -30,6 +31,8 @@ export type {
   Metrics,
   RouteMetrics,
   RequestContext,
+  DbCalls,
+  DbQuery,
 } from './types';
 
 // ─── Convenient default export ───────────────────────────────────────────────
@@ -44,15 +47,18 @@ function observability(options?: ObservabilityOptions) {
 
 // Attach named helpers directly on the function so CJS destructuring works
 import { getMetrics, resetMetrics } from './core/metrics';
-import { trackDbCall, addField, getContext } from './core/storage';
+import { trackDbCall, recordDbQuery, addField, getContext } from './core/storage';
+import { autoInstrument } from './core/instrument';
 import { fastifyObservability } from './middleware/fastify';
 
 observability.getMetrics = getMetrics;
 observability.resetMetrics = resetMetrics;
 observability.trackDbCall = trackDbCall;
+observability.recordDbQuery = recordDbQuery;
 observability.addField = addField;
 observability.getContext = getContext;
 observability.fastifyObservability = fastifyObservability;
+observability.autoInstrument = autoInstrument;
 observability.createExpressMiddleware = createExpressMiddleware;
 
 export default observability;
@@ -63,11 +69,13 @@ if (typeof module !== 'undefined') {
   module.exports = observability;
   module.exports.default = observability;
   module.exports.observability = observability;
+  module.exports.autoInstrument = autoInstrument;
   module.exports.createExpressMiddleware = createExpressMiddleware;
   module.exports.fastifyObservability = fastifyObservability;
   module.exports.getMetrics = getMetrics;
   module.exports.resetMetrics = resetMetrics;
   module.exports.trackDbCall = trackDbCall;
+  module.exports.recordDbQuery = recordDbQuery;
   module.exports.addField = addField;
   module.exports.getContext = getContext;
 }

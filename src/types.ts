@@ -58,15 +58,82 @@ export interface ObservabilityOptions {
    * Called at the end of every tracked request with the final log entry.
    */
   onResponse?: (entry: LogEntry) => void;
+
+  // ─── Auto-instrumentation ──────────────────────────────────────────────────
+
+  /**
+   * Automatically patch installed database libraries (pg, mysql2, mongoose,
+   * prisma, knex, sequelize, ioredis, better-sqlite3) so `dbCalls` is
+   * counted without manual `trackDbCall()` calls.
+   *
+   * - `true`  — auto-detect and patch all found libraries (recommended)
+   * - `false` — disable auto-instrumentation, use manual `trackDbCall()` only
+   *
+   * @default true
+   */
+  autoInstrument?: boolean;
+
+  // ─── Remote shipping (ObserveAPI SaaS) ─────────────────────────────────────
+
+  /**
+   * Your ObserveAPI project API key (`sk_live_...`).
+   * When set, every LogEntry is batched and shipped to the ingest endpoint.
+   * Local logging still works alongside remote shipping.
+   */
+  apiKey?: string;
+
+  /**
+   * ObserveAPI ingest endpoint URL.
+   * @default 'https://api.apilens.rest/v1/ingest'
+   */
+  endpoint?: string;
+
+  /**
+   * How often (ms) to flush the event batch to the remote endpoint.
+   * @default 5000
+   */
+  flushInterval?: number;
+
+  /**
+   * Flush immediately when this many events are queued, regardless of interval.
+   * @default 100
+   */
+  flushSize?: number;
 }
 
 export type LoggerFn = (entry: LogEntry) => void;
+
+/** A single tracked database query. */
+export interface DbQuery {
+  /** The query string (parameterised / masked — no raw values). */
+  query: string;
+  /** Which DB library executed this query. */
+  source: string;
+  /** ISO-8601 timestamp when the query started. */
+  executionTime: string;
+  /** Query duration in milliseconds. */
+  queryTime: number;
+}
+
+/** Aggregated DB call info attached to each log entry. */
+export interface DbCalls {
+  /** Total number of DB calls in this request. */
+  calls: number;
+  /** Sum of all query durations in milliseconds. */
+  totalTime: number;
+  /** The slowest single query time in milliseconds. */
+  slowestQuery: number;
+  /** Individual query details. */
+  queries: DbQuery[];
+}
 
 /** Live context stored per-request via AsyncLocalStorage. */
 export interface RequestContext {
   traceId: string;
   startTime: number;
+  /** @deprecated Use dbCallsDetail instead. Kept for backward compat. */
   dbCalls: number;
+  dbCallsDetail: DbCalls;
   customFields: Record<string, unknown>;
 }
 
@@ -84,7 +151,8 @@ export interface LogEntry {
   latency: number;
   /** Human-readable latency string, e.g. `"120ms"` */
   latencyMs: string;
-  dbCalls: number;
+  /** Rich DB call profiling with per-query details. */
+  dbCalls: DbCalls;
   slow: boolean;
   userAgent?: string;
   ip?: string;

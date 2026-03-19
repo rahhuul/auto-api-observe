@@ -1,8 +1,10 @@
 import { ObservabilityOptions, LogEntry, RequestContext } from '../types';
-import { storage } from '../core/storage';
+import { storage, createDbCalls } from '../core/storage';
 import { generateTraceId } from '../core/tracer';
 import { defaultLogger } from '../core/logger';
 import { recordMetric } from '../core/metrics';
+import { RemoteShipper } from '../core/shipper';
+import { autoInstrument } from '../core/instrument';
 
 // Fastify types are declared as peer deps — use loose duck-typing so the
 // package compiles even when fastify is not installed.
@@ -68,7 +70,21 @@ export function fastifyObservability(
     sampleRate = 1.0,
     onRequest,
     onResponse,
+    autoInstrument: shouldAutoInstrument = true,
+    apiKey,
+    endpoint      = 'https://api.apilens.rest/v1/ingest',
+    flushInterval = 5000,
+    flushSize     = 100,
   } = options;
+
+  // Auto-patch installed DB libraries (once per plugin registration)
+  if (shouldAutoInstrument) {
+    autoInstrument();
+  }
+
+  const shipper = apiKey
+    ? new RemoteShipper({ apiKey, endpoint, flushInterval, flushSize })
+    : null;
 
   fastify.decorateRequest('traceId', '');
   fastify.decorateRequest('_observeCtx', null);
@@ -88,6 +104,7 @@ export function fastifyObservability(
       traceId,
       startTime: Date.now(),
       dbCalls: 0,
+      dbCallsDetail: createDbCalls(),
       customFields: {},
     };
 
@@ -126,7 +143,7 @@ export function fastifyObservability(
       status: rep.statusCode,
       latency,
       latencyMs: `${latency}ms`,
-      dbCalls: context.dbCalls,
+      dbCalls: context.dbCallsDetail,
       slow,
       ip: getIp(req),
       userAgent: req.headers['user-agent'] as string | undefined,
@@ -136,6 +153,7 @@ export function fastifyObservability(
     if (logger !== false && (sampleRate >= 1.0 || Math.random() < sampleRate)) logger(entry);
     if (enableMetrics) recordMetric(entry, maxRoutes);
     if (onResponse) onResponse(entry);
+    if (shipper) shipper.push(entry);
   });
 
   done();

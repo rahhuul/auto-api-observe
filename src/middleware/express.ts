@@ -1,9 +1,11 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ObservabilityOptions, LogEntry, RequestContext } from '../types';
-import { storage } from '../core/storage';
+import { storage, createDbCalls } from '../core/storage';
 import { generateTraceId } from '../core/tracer';
 import { defaultLogger } from '../core/logger';
 import { recordMetric } from '../core/metrics';
+import { RemoteShipper } from '../core/shipper';
+import { autoInstrument } from '../core/instrument';
 
 function shouldSkip(path: string, skipRoutes: Array<string | RegExp>): boolean {
   return skipRoutes.some((pattern) =>
@@ -39,7 +41,22 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
     sampleRate = 1.0,
     onRequest,
     onResponse,
+    autoInstrument: shouldAutoInstrument = true,
+    apiKey,
+    endpoint      = 'https://api.apilens.rest/v1/ingest',
+    flushInterval = 5000,
+    flushSize     = 100,
   } = options;
+
+  // Auto-patch installed DB libraries (once per middleware instance)
+  if (shouldAutoInstrument) {
+    autoInstrument();
+  }
+
+  // Instantiate remote shipper once per middleware instance (not per request)
+  const shipper = apiKey
+    ? new RemoteShipper({ apiKey, endpoint, flushInterval, flushSize })
+    : null;
 
   return function observabilityMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (shouldSkip(req.path, skipRoutes)) {
@@ -54,6 +71,7 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
       traceId,
       startTime: Date.now(),
       dbCalls: 0,
+      dbCallsDetail: createDbCalls(),
       customFields: {},
     };
 
@@ -90,7 +108,7 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
           status: res.statusCode,
           latency,
           latencyMs: `${latency}ms`,
-          dbCalls: context.dbCalls,
+          dbCalls: context.dbCallsDetail,
           slow,
           ip: getIp(req),
           userAgent: req.headers['user-agent'],
@@ -109,6 +127,11 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
 
         if (onResponse) {
           onResponse(entry);
+        }
+
+        // Ship to ObserveAPI SaaS (non-blocking — batched, no await)
+        if (shipper) {
+          shipper.push(entry);
         }
 
         return originalEnd(...args);

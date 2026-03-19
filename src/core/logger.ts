@@ -1,4 +1,4 @@
-import { LogEntry, LoggerFn } from '../types';
+import { LogEntry, LoggerFn, DbCalls } from '../types';
 
 const RESET = '\x1b[0m';
 const GREEN = '\x1b[32m';
