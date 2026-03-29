@@ -11,6 +11,7 @@
   <a href="https://github.com/rahhuul/auto-api-observe"><img src="https://img.shields.io/github/stars/rahhuul/auto-api-observe?style=flat-square&color=yellow" alt="GitHub stars" /></a>
   <a href="https://github.com/rahhuul/auto-api-observe/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT" /></a>
   <a href="https://apilens.rest"><img src="https://img.shields.io/badge/dashboard-apilens.rest-8B5CF6?style=flat-square" alt="Dashboard" /></a>
+  <a href="https://github.com/rahhuul/auto-api-observe/blob/master/CHANGELOG.md"><img src="https://img.shields.io/badge/changelog-v1.2.0-orange?style=flat-square" alt="Changelog" /></a>
 </p>
 
 ---
@@ -186,6 +187,24 @@ app.use(observe({ apiKey: process.env.APILENS_KEY }));
 
 > **Free during beta** — all features included, no credit card.
 
+### Screenshots
+
+**Overview** — real-time KPIs, request volume, latency percentiles, status distribution
+
+![Overview](docs/screenshots/overview.png)
+
+**Request Log** — every request with full DB query details, trace IDs, filters
+
+![Request Log](docs/screenshots/requests.png)
+
+**Database Profiling** — N+1 detection, slow queries, source distribution
+
+![Database](docs/screenshots/database.png)
+
+**Routes** — per-route breakdown with latency, errors, slow count
+
+![Routes](docs/screenshots/routes.png)
+
 ---
 
 ## Features
@@ -197,6 +216,7 @@ app.use(observe({ apiKey: process.env.APILENS_KEY }));
 - **In-memory metrics** — aggregated per-route stats via `getMetrics()`
 - **Custom fields** — attach arbitrary data with `addField()`
 - **Cloud dashboard** — charts, errors, traces, alerts at apilens.rest
+- **Data retention** — auto-cleanup by plan (free 7d, starter 30d, pro 90d)
 - **High throughput** — buffered async logger, 600k+ req/min
 - **Sampling** — `sampleRate` for extreme volume
 - **Memory safe** — `maxRoutes` cap prevents unbounded growth
@@ -331,7 +351,9 @@ MIT
 
 <p align="center">
   Built by <a href="https://github.com/rahhuul">@rahhuul</a> ·
+  <a href="https://x.com/rahhuul310">Twitter</a> ·
   <a href="https://apilens.rest">apilens.rest</a> ·
   <a href="https://github.com/rahhuul/auto-api-observe">GitHub</a> ·
-  <a href="https://www.npmjs.com/package/auto-api-observe">npm</a>
+  <a href="https://www.npmjs.com/package/auto-api-observe">npm</a> ·
+  <a href="https://github.com/rahhuul/auto-api-observe/blob/master/CHANGELOG.md">Changelog</a>
 </p>
