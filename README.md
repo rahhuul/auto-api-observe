@@ -330,19 +330,19 @@ Sign up free at [apilens.rest](https://apilens.rest) — no credit card required
 
 **Overview** — real-time KPIs, request volume, latency percentiles, status distribution
 
-![Overview](docs/screenshots/overview.png)
+![Overview](https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/screenshots/overview.png)
 
 **Request Log** — every request with full DB query details, trace IDs, filters
 
-![Request Log](docs/screenshots/requests.png)
+![Request Log](https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/screenshots/requests.png)
 
 **Database Profiling** — N+1 detection, slow queries, source distribution
 
-![Database](docs/screenshots/database.png)
+![Database](https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/screenshots/database.png)
 
 **Routes** — per-route breakdown with latency, errors, slow count
 
-![Routes](docs/screenshots/routes.png)
+![Routes](https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/screenshots/routes.png)
 
 ---
 
