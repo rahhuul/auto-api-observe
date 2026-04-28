@@ -25,7 +25,7 @@ Datadog costs $23/host/month. New Relic wants your credit card. Grafana takes an
 ## The Solution
 
 ```js
-app.use(require('auto-api-observe')({ apiKey: 'ak_live_...' }));
+app.use(require('auto-api-observe')({ apiKey: 'sk_live_...' }));
 ```
 
 One line. Every request is tracked with latency, trace IDs, DB profiling, outbound HTTP calls, process metrics, and sensitive field masking — shipped to your dashboard at [apilens.rest](https://apilens.rest).
@@ -231,7 +231,7 @@ Automatically tracks all outbound HTTP calls your server makes — `fetch`, `axi
 
 ```js
 observe({
-  apiKey: 'ak_live_...',
+  apiKey: 'sk_live_...',
   autoInstrumentOutbound: true,  // default: true
 });
 ```
@@ -268,7 +268,7 @@ Attach metadata to every log entry for filtering in the dashboard:
 
 ```js
 observe({
-  apiKey: 'ak_live_...',
+  apiKey: 'sk_live_...',
   tags: {
     service: 'user-api',
     env: process.env.NODE_ENV,
@@ -286,7 +286,7 @@ Ship memory, CPU, and uptime metrics on an interval (default: every 30s):
 
 ```js
 observe({
-  apiKey: 'ak_live_...',
+  apiKey: 'sk_live_...',
   processMetrics: 30000,  // ms interval, or false to disable
 });
 ```
@@ -301,7 +301,7 @@ Catch and ship `uncaughtException` and `unhandledRejection` events:
 
 ```js
 observe({
-  apiKey: 'ak_live_...',
+  apiKey: 'sk_live_...',
   captureUnhandledErrors: true,
 });
 ```
@@ -351,7 +351,7 @@ Sign up free at [apilens.rest](https://apilens.rest) — no credit card required
 ```ts
 observe({
   // Required
-  apiKey: 'ak_live_...',          // get one free at apilens.rest
+  apiKey: 'sk_live_...',          // get one free at apilens.rest
 
   // Request tracking
   slowThreshold: 1000,            // ms — flag requests above this (default: 1000)
