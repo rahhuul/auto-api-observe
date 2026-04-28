@@ -1,3 +1,8 @@
+/**
+ * @module
+ * Koa middleware for auto-api-observe. Use `koaObservability` as Koa middleware
+ * for zero-config request tracing on Koa v2+ applications.
+ */
 import { ObservabilityOptions, RequestContext } from '../types';
 import { storage, createDbCalls } from '../core/storage';
 import { generateTraceId } from '../core/tracer';
@@ -17,7 +22,7 @@ type KoaContext = {
 };
 type KoaNext = () => Promise<void>;
 
-export function koaObservability(options: ObservabilityOptions = {}) {
+export function koaObservability(options: ObservabilityOptions = {}): (ctx: KoaContext, next: KoaNext) => Promise<void> {
   const opts = setup(options);
   if (!opts) return async (_ctx: KoaContext, next: KoaNext) => next();
 

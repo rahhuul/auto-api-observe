@@ -1,3 +1,8 @@
+/**
+ * @module
+ * Hono middleware for auto-api-observe. Use `honoObservability` with Hono v3/v4
+ * for zero-config request tracing including Edge and Cloudflare Workers.
+ */
 import { ObservabilityOptions, RequestContext } from '../types';
 import { storage, createDbCalls } from '../core/storage';
 import { generateTraceId } from '../core/tracer';
@@ -17,7 +22,7 @@ type HonoContext = {
 };
 type HonoNext = () => Promise<Response | void>;
 
-export function honoObservability(options: ObservabilityOptions = {}) {
+export function honoObservability(options: ObservabilityOptions = {}): (c: HonoContext, next: HonoNext) => Promise<Response | void> {
   const opts = setup(options);
   if (!opts) return async (_c: HonoContext, next: HonoNext) => next();
 

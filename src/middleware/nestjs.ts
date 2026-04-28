@@ -21,7 +21,7 @@ type CallHandler = { handle: () => any };
  * const Interceptor = createNestObservabilityInterceptor({ apiKey: process.env.APILENS_KEY });
  * app.useGlobalInterceptors(new Interceptor());
  */
-export function createNestObservabilityInterceptor(options: ObservabilityOptions = {}) {
+export function createNestObservabilityInterceptor(options: ObservabilityOptions = {}): new () => { intercept(ctx: ExecutionContext, next: CallHandler): any } {
   const opts = setup(options);
 
   return class ObservabilityInterceptor {

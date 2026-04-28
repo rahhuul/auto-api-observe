@@ -1,3 +1,8 @@
+/**
+ * @module
+ * Express middleware for auto-api-observe. Use `createExpressMiddleware` or
+ * the default `observe()` alias for zero-config request tracing.
+ */
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { ObservabilityOptions, RequestContext } from '../types';
 import { storage, createDbCalls } from '../core/storage';
@@ -10,6 +15,19 @@ function getIp(req: Request): string {
   return req.socket?.remoteAddress ?? req.ip ?? 'unknown';
 }
 
+/**
+ * Creates an Express `RequestHandler` that auto-instruments all routes with
+ * request tracing, DB profiling, outbound HTTP tracking, and real-time metrics.
+ *
+ * @example
+ * ```js
+ * import express from 'express';
+ * import { createExpressMiddleware } from 'auto-api-observe';
+ *
+ * const app = express();
+ * app.use(createExpressMiddleware({ apiKey: process.env.APILENS_KEY }));
+ * ```
+ */
 export function createExpressMiddleware(options: ObservabilityOptions = {}): RequestHandler {
   const opts = setup(options);
 

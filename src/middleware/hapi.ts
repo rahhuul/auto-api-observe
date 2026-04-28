@@ -17,7 +17,7 @@ const _ctxMap = new WeakMap<object, RequestContext>();
  * @example
  * await server.register({ plugin: hapiObservabilityPlugin, options: { apiKey: process.env.APILENS_KEY } });
  */
-export const hapiObservabilityPlugin = {
+export const hapiObservabilityPlugin: { name: string; version: string; register(server: HapiServer, options?: ObservabilityOptions): void } = {
   name:    'auto-api-observe',
   version: '1.3.0',
   register(server: HapiServer, options: ObservabilityOptions = {}): void {

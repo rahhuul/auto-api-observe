@@ -18,7 +18,7 @@ const _ctxMap = new WeakMap<Request, RequestContext>();
  *   .get('/', () => 'Hello')
  *   .listen(3000);
  */
-export function elysiaObservability(options: ObservabilityOptions = {}) {
+export function elysiaObservability(options: ObservabilityOptions = {}): { name: string; version: string; setup(app: any): any } {
   const opts = setup(options);
 
   // Return an object conforming to Elysia's plugin contract.

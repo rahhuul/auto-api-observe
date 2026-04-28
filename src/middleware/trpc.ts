@@ -27,7 +27,7 @@ type TrpcMiddlewareOpts = {
  * // Apply to all procedures:
  * const publicProcedure = t.procedure.use(isObserved);
  */
-export function createTrpcObservabilityMiddleware(options: ObservabilityOptions = {}) {
+export function createTrpcObservabilityMiddleware(options: ObservabilityOptions = {}): (opts: TrpcMiddlewareOpts) => Promise<{ ok: boolean; [k: string]: unknown }> {
   const opts = setup(options);
 
   return async function trpcObservabilityMiddleware({ path, type, ctx, next }: TrpcMiddlewareOpts) {

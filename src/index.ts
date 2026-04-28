@@ -53,46 +53,28 @@ export type {
 } from './types';
 
 // ─── Default export — `observe()` alias for Express ──────────────────────────
-import { createExpressMiddleware }            from './middleware/express';
-import { ObservabilityOptions }               from './types';
-import { getMetrics, resetMetrics }           from './core/metrics';
+import { createExpressMiddleware }                      from './middleware/express';
+import { ObservabilityOptions }                         from './types';
+import { RequestHandler }                               from 'express';
+import { getMetrics, resetMetrics }                     from './core/metrics';
 import { trackDbCall, recordDbQuery, addField, getContext } from './core/storage';
-import { autoInstrument }                     from './core/instrument';
-import { fastifyObservability }               from './middleware/fastify';
-import { koaObservability }                   from './middleware/koa';
-import { honoObservability }                  from './middleware/hono';
-import { createNestObservabilityInterceptor } from './middleware/nestjs';
-import { withObservability as withNextObservability } from './middleware/nextjs';
-import { hapiObservabilityPlugin }            from './middleware/hapi';
-import { elysiaObservability }                from './middleware/elysia';
-import { apolloObservabilityPlugin }          from './middleware/apollo';
-import { withLambdaObservability }            from './middleware/lambda';
-import { createTrpcObservabilityMiddleware }  from './middleware/trpc';
-import { createRestifyMiddleware }            from './middleware/restify';
+import { autoInstrument }                               from './core/instrument';
+import { fastifyObservability }                         from './middleware/fastify';
+import { koaObservability }                             from './middleware/koa';
+import { honoObservability }                            from './middleware/hono';
+import { createNestObservabilityInterceptor }           from './middleware/nestjs';
+import { withObservability as withNextObservability }   from './middleware/nextjs';
+import { hapiObservabilityPlugin }                      from './middleware/hapi';
+import { elysiaObservability }                          from './middleware/elysia';
+import { apolloObservabilityPlugin }                    from './middleware/apollo';
+import { withLambdaObservability }                      from './middleware/lambda';
+import { createTrpcObservabilityMiddleware }            from './middleware/trpc';
+import { createRestifyMiddleware }                      from './middleware/restify';
 
-function observe(options?: ObservabilityOptions) {
+/** Express shorthand — equivalent to `createExpressMiddleware(options)`. */
+function observe(options?: ObservabilityOptions): RequestHandler {
   return createExpressMiddleware(options);
 }
-
-observe.createExpressMiddleware            = createExpressMiddleware;
-observe.fastifyObservability               = fastifyObservability;
-observe.koaObservability                   = koaObservability;
-observe.honoObservability                  = honoObservability;
-observe.createNestObservabilityInterceptor = createNestObservabilityInterceptor;
-observe.withNextObservability              = withNextObservability;
-observe.hapiObservabilityPlugin            = hapiObservabilityPlugin;
-observe.elysiaObservability                = elysiaObservability;
-observe.apolloObservabilityPlugin          = apolloObservabilityPlugin;
-observe.withLambdaObservability            = withLambdaObservability;
-observe.createTrpcObservabilityMiddleware  = createTrpcObservabilityMiddleware;
-observe.createRestifyMiddleware            = createRestifyMiddleware;
-observe.getMetrics                         = getMetrics;
-observe.resetMetrics                       = resetMetrics;
-observe.trackDbCall                        = trackDbCall;
-observe.recordDbQuery                      = recordDbQuery;
-observe.addField                           = addField;
-observe.getContext                         = getContext;
-observe.autoInstrument                     = autoInstrument;
 
 export default observe;
 

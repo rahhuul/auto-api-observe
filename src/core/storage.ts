@@ -3,14 +3,17 @@ import { RequestContext, DbCalls, DbQuery, OutboundCall } from '../types';
 
 export const storage = new AsyncLocalStorage<RequestContext>();
 
+/** Creates an empty {@link DbCalls} accumulator for a new request context. */
 export function createDbCalls(): DbCalls {
   return { calls: 0, totalTime: 0, slowestQuery: 0, queries: [] };
 }
 
+/** Returns the active {@link RequestContext} for the current async call stack, or `undefined` if called outside a request. */
 export function getContext(): RequestContext | undefined {
   return storage.getStore();
 }
 
+/** Records a completed DB query on the current request context. Used by auto-instrumentation and the manual `recordDbQuery` helper. */
 export function recordDbQuery(query: DbQuery): void {
   const ctx = storage.getStore();
   if (!ctx) return;
@@ -23,6 +26,7 @@ export function recordDbQuery(query: DbQuery): void {
   ctx.dbCalls = ctx.dbCallsDetail.calls;
 }
 
+/** Manually increments the DB call counter for the current request. Use when auto-instrumentation cannot patch the library. */
 export function trackDbCall(count = 1): void {
   const ctx = storage.getStore();
   if (!ctx) return;
@@ -33,12 +37,13 @@ export function trackDbCall(count = 1): void {
   ctx.dbCalls = ctx.dbCallsDetail.calls;
 }
 
+/** Attaches a custom key/value field to the current request's log entry. Sensitive keys are automatically redacted before shipping. */
 export function addField(key: string, value: unknown): void {
   const ctx = storage.getStore();
   if (ctx) ctx.customFields[key] = value;
 }
 
-/** Record a completed outbound HTTP call on the current request context. */
+/** Records a completed outbound HTTP call on the current request context. */
 export function recordOutboundCall(call: OutboundCall): void {
   const ctx = storage.getStore();
   if (!ctx) return;
