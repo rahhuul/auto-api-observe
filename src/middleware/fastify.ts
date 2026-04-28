@@ -72,8 +72,11 @@ export function fastifyObservability(
     const context = req._observeCtx;
     if (!context) return;
 
-    const route = req.routeOptions?.url ?? req.url;
-    const entry = buildEntry(opts, context, req.method, route, req.url, rep.statusCode, getIp(req), req.headers['user-agent'] as string | undefined);
+    const route        = req.routeOptions?.url ?? req.url;
+    const clRaw        = req.headers['content-length'];
+    const requestSize  = parseInt((Array.isArray(clRaw) ? clRaw[0] : clRaw) ?? '0', 10) || undefined;
+    const responseSize = parseInt((rep as FastifyReply & { getHeader?: (k: string) => unknown }).getHeader?.('content-length') as string ?? '0', 10) || undefined;
+    const entry        = buildEntry(opts, context, req.method, route, req.url, rep.statusCode, getIp(req), req.headers['user-agent'] as string | undefined, { requestSize, responseSize });
     finalize(opts, entry);
   });
 

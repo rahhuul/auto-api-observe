@@ -41,9 +41,11 @@ export function createExpressMiddleware(options: ObservabilityOptions = {}): Req
       const originalEnd = res.end.bind(res) as (...a: any[]) => Response;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (res as any).end = function patchedEnd(...args: any[]): Response {
-        const baseUrl = (req as Request & { baseUrl?: string }).baseUrl ?? '';
-        const route   = req.route?.path ?? ((baseUrl + req.path) || req.path);
-        const entry   = buildEntry(opts, context, req.method, route, req.path, res.statusCode, getIp(req), req.headers['user-agent']);
+        const baseUrl      = (req as Request & { baseUrl?: string }).baseUrl ?? '';
+        const route        = req.route?.path ?? ((baseUrl + req.path) || req.path);
+        const requestSize  = parseInt(req.headers['content-length'] ?? '0', 10) || undefined;
+        const responseSize = parseInt((res.getHeader('content-length') as string) ?? '0', 10) || undefined;
+        const entry        = buildEntry(opts, context, req.method, route, req.path, res.statusCode, getIp(req), req.headers['user-agent'], { requestSize, responseSize });
         finalize(opts, entry);
         return originalEnd(...args);
       };

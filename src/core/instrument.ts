@@ -14,7 +14,7 @@
  *   - sequelize                   — Sequelize.query
  */
 
-import { recordDbQuery } from './storage';
+import { recordDbQuery, recordOutboundCall } from './storage';
 import type { DbQuery } from '../types';
 
 type AnyFn = (...args: unknown[]) => unknown;
@@ -309,6 +309,148 @@ function patchBetterSqlite3(): boolean {
   return true;
 }
 
+// ─── node-redis (redis package, v4+) ─────────────────────────────────────────
+
+function patchNodeRedis(): boolean {
+  const redis = tryRequire('redis') as Record<string, unknown> | null;
+  // node-redis v4 exports createClient; bail if not present or already patched
+  if (!redis?.createClient || (redis as Record<string, unknown>).__apilens_patched) return false;
+
+  const origCreate = redis.createClient as AnyFn;
+  redis.createClient = function patchedCreateClient(...args: unknown[]): unknown {
+    const client = origCreate.apply(this, args) as Record<string, unknown>;
+    const proto = Object.getPrototypeOf(client) as Record<string, unknown> | null;
+    if (proto && !proto.__apilens_redis_patched) {
+      // v4: sendCommand(args: string[], options?) — args[0] is string[]
+      wrapMethod(proto, 'sendCommand', 'node-redis', (callArgs) => {
+        const cmdArr = callArgs[0];
+        if (Array.isArray(cmdArr) && cmdArr.length > 0) return `REDIS ${String(cmdArr[0]).toUpperCase()}`;
+        return '(node-redis)';
+      });
+      proto.__apilens_redis_patched = true;
+    }
+    return client;
+  };
+  (redis as Record<string, unknown>).__apilens_patched = true;
+  return true;
+}
+
+// ─── Outbound HTTP — URL masking ─────────────────────────────────────────────
+
+const SENSITIVE_QS = new Set([
+  'token', 'api_key', 'apikey', 'key', 'secret', 'password', 'auth',
+  'access_token', 'refresh_token', 'client_secret', 'authorization',
+]);
+
+function maskUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    let redacted = false;
+    url.searchParams.forEach((_, k) => {
+      if (SENSITIVE_QS.has(k.toLowerCase())) { url.searchParams.set(k, '[REDACTED]'); redacted = true; }
+    });
+    return url.origin + url.pathname + (url.search ? url.search : '');
+  } catch {
+    return raw.slice(0, 500);
+  }
+}
+
+// ─── Outbound HTTP — axios ────────────────────────────────────────────────────
+
+function patchAxios(): boolean {
+  const axios = tryRequire('axios') as Record<string, unknown> | null;
+  if (!axios?.interceptors || (axios as Record<string, unknown>).__apilens_patched) return false;
+
+  const interceptors = axios.interceptors as Record<string, { request: Record<string, unknown>; response: Record<string, unknown> }>;
+
+  (interceptors.request as unknown as { use: AnyFn }).use((config: Record<string, unknown>) => {
+    config.__apilens_start = performance.now();
+    return config;
+  });
+
+  (interceptors.response as unknown as { use: AnyFn }).use(
+    (response: Record<string, unknown>) => {
+      const cfg = response.config as Record<string, unknown> | undefined;
+      recordOutboundCall({
+        method:  String(cfg?.method ?? 'GET').toUpperCase(),
+        url:     maskUrl(String(cfg?.url ?? '')),
+        status:  Number((response as Record<string, unknown>).status ?? 0),
+        latency: Math.round(performance.now() - Number(cfg?.__apilens_start ?? performance.now())),
+      });
+      return response;
+    },
+    (error: Record<string, unknown>) => {
+      const cfg = error.config as Record<string, unknown> | undefined;
+      recordOutboundCall({
+        method:  String(cfg?.method ?? 'GET').toUpperCase(),
+        url:     maskUrl(String(cfg?.url ?? '')),
+        status:  Number((error.response as Record<string, unknown> | undefined)?.status ?? 0),
+        latency: Math.round(performance.now() - Number(cfg?.__apilens_start ?? performance.now())),
+      });
+      throw error;
+    },
+  );
+
+  (axios as Record<string, unknown>).__apilens_patched = true;
+  return true;
+}
+
+// ─── Outbound HTTP — native fetch / undici ────────────────────────────────────
+
+function patchFetch(): boolean {
+  if (typeof globalThis.fetch !== 'function') return false;
+  if ((globalThis.fetch as AnyFn & { __apilens?: boolean }).__apilens) return false;
+
+  const original = globalThis.fetch.bind(globalThis);
+
+  globalThis.fetch = async function patchedFetch(
+    input: Parameters<typeof fetch>[0],
+    init?:  Parameters<typeof fetch>[1],
+  ): Promise<Response> {
+    const start  = performance.now();
+    const method = (init?.method ?? 'GET').toUpperCase();
+    const url    = typeof input === 'string' ? input
+      : input instanceof URL ? input.href
+      : (input as Request).url;
+
+    try {
+      const res = await original(input, init);
+      recordOutboundCall({ method, url: maskUrl(url), status: res.status, latency: Math.round(performance.now() - start) });
+      return res;
+    } catch (err) {
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
+      throw err;
+    }
+  };
+  (globalThis.fetch as AnyFn & { __apilens: boolean }).__apilens = true;
+  return true;
+}
+
+function patchUndici(): boolean {
+  const undici = tryRequire('undici') as Record<string, unknown> | null;
+  if (!undici?.fetch || (undici.fetch as AnyFn & { __apilens?: boolean }).__apilens) return false;
+
+  const original = undici.fetch as AnyFn;
+  undici.fetch = async function patchedUndici(...args: unknown[]): Promise<unknown> {
+    const start  = performance.now();
+    const input  = args[0];
+    const init   = args[1] as Record<string, unknown> | undefined;
+    const method = String(init?.method ?? 'GET').toUpperCase();
+    const url    = typeof input === 'string' ? input : String((input as Record<string, unknown>)?.href ?? input);
+
+    try {
+      const res = await original(...args) as Record<string, unknown>;
+      recordOutboundCall({ method, url: maskUrl(url), status: Number(res.status ?? 0), latency: Math.round(performance.now() - start) });
+      return res;
+    } catch (err) {
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
+      throw err;
+    }
+  };
+  (undici.fetch as AnyFn & { __apilens: boolean }).__apilens = true;
+  return true;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export interface InstrumentResult {
@@ -320,16 +462,17 @@ export interface InstrumentResult {
  * Auto-detect and patch all installed database libraries.
  * Called once when the middleware initializes.
  */
-export function autoInstrument(): InstrumentResult {
+export function autoInstrument(includeOutbound = false): InstrumentResult {
   const patchers: Array<[string, () => boolean]> = [
-    ['pg', patchPg],
-    ['mysql2', patchMysql2],
-    ['mongoose', patchMongoose],
-    ['ioredis', patchIoredis],
-    ['knex', patchKnex],
-    ['@prisma/client', patchPrisma],
-    ['sequelize', patchSequelize],
-    ['better-sqlite3', patchBetterSqlite3],
+    ['pg',              patchPg],
+    ['mysql2',          patchMysql2],
+    ['mongoose',        patchMongoose],
+    ['ioredis',         patchIoredis],
+    ['knex',            patchKnex],
+    ['@prisma/client',  patchPrisma],
+    ['sequelize',       patchSequelize],
+    ['better-sqlite3',  patchBetterSqlite3],
+    ['node-redis',      patchNodeRedis],
   ];
 
   const patched: string[] = [];
@@ -342,6 +485,12 @@ export function autoInstrument(): InstrumentResult {
     } catch {
       // Silently skip — instrumentation must never break the app
     }
+  }
+
+  if (includeOutbound) {
+    try { if (patchAxios())  patched.push('axios');  } catch {}
+    try { if (patchFetch())  patched.push('fetch');  } catch {}
+    try { if (patchUndici()) patched.push('undici'); } catch {}
   }
 
   return { patched, total: patched.length };
