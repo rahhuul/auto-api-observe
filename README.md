@@ -5,6 +5,8 @@
   Request tracing · DB profiling · Outbound HTTP · Process metrics · Cloud dashboard
 </p>
 
+> 🔭 **Free cloud dashboard** → [apilens.rest](https://apilens.rest) — real-time request logs, DB profiling, N+1 detection, error tracking. No credit card. Setup in 60 seconds.
+
 <p align="center">
   <a href="https://www.npmjs.com/package/auto-api-observe"><img src="https://img.shields.io/npm/v/auto-api-observe.svg?style=flat-square&color=cb3837" alt="npm version" /></a>
   <a href="https://www.npmjs.com/package/auto-api-observe"><img src="https://img.shields.io/npm/dm/auto-api-observe.svg?style=flat-square&color=blue" alt="npm downloads" /></a>
@@ -29,6 +31,10 @@ app.use(require('auto-api-observe')({ apiKey: 'sk_live_...' }));
 ```
 
 One line. Every request is tracked with latency, trace IDs, DB profiling, outbound HTTP calls, process metrics, and sensitive field masking — shipped to your dashboard at [apilens.rest](https://apilens.rest).
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/apilens-demo.gif" alt="ApiLens dashboard demo — install, add one line, dashboard lights up" width="100%" />
+</p>
 
 ---
 
@@ -487,6 +493,12 @@ Open an issue before submitting large changes.
 ## License
 
 MIT
+
+---
+
+<p align="center">
+  <strong>If auto-api-observe saves you time, please <a href="https://github.com/rahhuul/auto-api-observe">⭐ star the repo</a> — it helps others find it.</strong>
+</p>
 
 ---
 
