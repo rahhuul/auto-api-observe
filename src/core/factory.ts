@@ -4,6 +4,7 @@ import { recordMetric } from './metrics';
 import { RemoteShipper } from './shipper';
 import { autoInstrument } from './instrument';
 import { shipStartupEvent, startProcessMetrics, captureUnhandledErrors } from './process-monitor';
+import { WsProcessClient } from './ws-client';
 
 export const DEFAULT_ENDPOINT = 'https://api.apilens.rest/v1/ingest';
 
@@ -74,19 +75,20 @@ export function setup(options: ObservabilityOptions): ResolvedOptions | null {
 
   if (shouldAutoInstrument) autoInstrument(shouldInstrumentOutbound);
 
-  const shipper = new RemoteShipper({ apiKey, endpoint, flushInterval, flushSize });
+  const shipper   = new RemoteShipper({ apiKey, endpoint, flushInterval, flushSize });
+  const wsClient  = new WsProcessClient(apiKey, endpoint);
 
-  // One-time startup event
-  shipStartupEvent(shipper, tags);
+  // One-time startup event over WebSocket (no quota impact)
+  shipStartupEvent(wsClient, tags);
 
-  // Background process metrics
+  // Background process metrics over WebSocket (no quota impact)
   if (processMetrics !== false && processMetrics > 0) {
-    startProcessMetrics(shipper, tags, processMetrics);
+    startProcessMetrics(wsClient, tags, processMetrics);
   }
 
-  // Opt-in error capture
+  // Opt-in error capture over WebSocket
   if (shouldCaptureErrors) {
-    captureUnhandledErrors(shipper, tags);
+    captureUnhandledErrors(wsClient, tags);
   }
 
   return {
