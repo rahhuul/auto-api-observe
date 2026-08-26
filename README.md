@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/logo-dark.png" />
+    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/logo-light.png" />
+    <img src="https://raw.githubusercontent.com/rahhuul/auto-api-observe/master/docs/logo-light.png" alt="APILens" width="480" />
+  </picture>
+</p>
+
 <h1 align="center">auto-api-observe</h1>
 
 <p align="center">
