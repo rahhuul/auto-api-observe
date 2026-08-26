@@ -43,11 +43,32 @@ export function koaObservability(options: ObservabilityOptions = {}): (ctx: KoaC
     ctx.set(opts.traceHeader, traceId);
     if (opts.onRequest) opts.onRequest(context);
 
-    await storage.run(context, async () => { await next(); });
+    // If downstream middleware throws, `next()` rejects and Koa's own
+    // top-level handler sets the response status via ctx.app.emit('error')
+    // — which runs AFTER this middleware has already unwound. Without
+    // catching here, the entry never gets built/logged at all for any
+    // request that errors, which is exactly the case observability matters
+    // most for. Catch, log using the status Koa will actually send
+    // (err.status/statusCode, same fallback Koa's default onerror uses),
+    // then re-throw so Koa's normal error handling and response are
+    // completely unaffected.
+    let caughtErr: unknown;
+    try {
+      await storage.run(context, async () => { await next(); });
+    } catch (err) {
+      caughtErr = err;
+    }
 
-    const ua    = ctx.request.headers['user-agent'];
-    const ip    = ctx.request.ip ?? 'unknown';
-    const entry = buildEntry(opts, context, ctx.method, ctx.path, ctx.url, ctx.status, ip, Array.isArray(ua) ? ua[0] : ua);
+    const ua     = ctx.request.headers['user-agent'];
+    const ip     = ctx.request.ip ?? 'unknown';
+    const status = caughtErr
+      ? Number((caughtErr as { status?: number; statusCode?: number }).status
+          ?? (caughtErr as { statusCode?: number }).statusCode
+          ?? 500)
+      : ctx.status;
+    const entry  = buildEntry(opts, context, ctx.method, ctx.path, ctx.url, status, ip, Array.isArray(ua) ? ua[0] : ua);
     finalize(opts, entry);
+
+    if (caughtErr) throw caughtErr;
   };
 }

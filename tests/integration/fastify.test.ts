@@ -108,3 +108,24 @@ describe('fastifyObservability — slow threshold', () => {
     await app.close();
   });
 });
+
+describe('fastifyObservability — logs entries for handlers that throw', () => {
+  // Fastify's onResponse hook fires regardless of whether the route handler
+  // threw, so this should already work — but assert it explicitly as a
+  // regression guard for the class of bug found in Koa/NestJS/Elysia (a
+  // hook/lifecycle point that only fires on the success path).
+  it('logs a request whose handler throws an uncaught error', async () => {
+    resetMetrics();
+    const entries: unknown[] = [];
+    const app = Fastify({ logger: false }) as FastifyApp;
+    app.register(fastifyObservability, { apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) } as Parameters<typeof fastifyObservability>[1]);
+    app.get('/boom', async () => { throw new Error('boom'); });
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/boom' });
+    expect(res.statusCode).toBe(500);
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as { status: number }).status).toBe(500);
+    await app.close();
+  });
+});

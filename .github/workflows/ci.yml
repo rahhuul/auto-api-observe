@@ -15,6 +15,79 @@ jobs:
       matrix:
         node-version: [18.x, 20.x, 22.x]
 
+    # Real services for the integration tests in tests/integration/databases/
+    # and tests/integration/{koa,hono,hapi,...}.test.ts — these exercise the
+    # actual patched libraries against real servers (not mocks), which is
+    # what catches the class of bug (double-counting, missing timing, error
+    # paths silently unlogged) that mock-only tests missed historically.
+    # Each DB test skips gracefully if its service isn't reachable, so this
+    # degrades safely if a service container fails to start.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ping:1})'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # `pg` reads these standard env var names automatically.
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: root
+      MYSQL_DATABASE: test
+      MONGO_HOST: 127.0.0.1
+      MONGO_PORT: 27017
+      MONGO_DB: auto_api_observe_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,10 +106,37 @@ jobs:
       - name: Run tests
         run: npm test
 
+  elysia:
+    name: Test (Elysia / Bun)
+    runs-on: ubuntu-latest
+    # Elysia's .listen() uses Bun.serve() internally, so it can't run under
+    # Vitest/Node like the other framework tests — see tests/bun/elysia.test.js.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run Elysia test
+        run: bun tests/bun/elysia.test.js
+
   publish-dry-run:
     name: Publish dry-run
     runs-on: ubuntu-latest
-    needs: test
+    needs: [test, elysia]
     if: github.ref == 'refs/heads/master'
 
     steps:

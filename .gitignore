@@ -4,5 +4,14 @@ dist/
 *.d.ts.map
 .env
 .DS_Store
+.planning/
 coverage/
+launch/
+marketing/
+screenshots/
+scripts/
+video-ad/
 .claude/
+resume-pdf/
+APILens_AI_PRD.md
+APILens_AI_SOW.md

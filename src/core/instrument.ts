@@ -14,10 +14,37 @@
  *   - sequelize                   — Sequelize.query
  */
 
-import { recordDbQuery, recordOutboundCall } from './storage';
+import { AsyncLocalStorage } from 'async_hooks';
+import { recordDbQueryOnContext, recordOutboundCall, getContext } from './storage';
 import type { DbQuery } from '../types';
 
 type AnyFn = (...args: unknown[]) => unknown;
+
+/**
+ * Some ORMs/query-builders (Prisma with a driver adapter, Sequelize, Knex)
+ * internally delegate to an already-patched lower-level driver (pg, mysql2)
+ * to actually run the query — e.g. Prisma's `_request` calls into the pg
+ * adapter, which calls `pg`'s `Client.prototype.query`. Since both layers
+ * are independently patched, every such query would otherwise be recorded
+ * TWICE. Confirmed empirically at scale for Prisma+pg-adapter, Sequelize+pg,
+ * and Knex+pg (20 real queries each recorded as 40).
+ *
+ * A flat "is anything else in flight" counter would fix that but wrongly
+ * suppress genuinely CONCURRENT sibling queries too (e.g. the
+ * `Promise.all([pool.query(a), pool.query(b)])` / bounded-parallelism
+ * pattern used throughout real bulk-import code) — those aren't nested
+ * inside each other, they're independent dispatches from the same caller.
+ *
+ * A dedicated AsyncLocalStorage instance solves this correctly: `run(true,
+ * fn)` marks the ENTIRE async continuation chain that `fn` (here, the
+ * delegating call) spawns — including continuations scheduled well after
+ * `run()` itself has synchronously returned — while a sibling call
+ * dispatched from the same (non-nested) calling code never sees that
+ * marker, because it was never scheduled from within that chain. The
+ * outermost (semantically meaningful, e.g. "User.update") call wins;
+ * anything it recursively delegates into is suppressed.
+ */
+const suppressNestedRecording = new AsyncLocalStorage<true>();
 
 // ─── Query masking ───────────────────────────────────────────────────────────
 // Replaces literal values in SQL with placeholders to avoid logging sensitive data.
@@ -46,9 +73,11 @@ function extractQuery(args: unknown[], source: string): string {
   }
 
   // pg: first arg can be a config object { text: 'SELECT ...' }
-  if (first && typeof first === 'object' && 'text' in (first as Record<string, unknown>)) {
-    const text = (first as Record<string, unknown>).text;
-    if (typeof text === 'string') return maskSqlValues(text);
+  // sequelize (bind-parameterized queries): { query: 'SELECT ...', bind: [...] }
+  if (first && typeof first === 'object') {
+    const obj = first as Record<string, unknown>;
+    if (typeof obj.text === 'string') return maskSqlValues(obj.text);
+    if (typeof obj.query === 'string') return maskSqlValues(obj.query);
   }
 
   // Prisma: first arg is { action: 'findMany', model: 'User', ... }
@@ -80,8 +109,8 @@ function extractMongoQuery(method: string, args: unknown[]): string {
 
 // ─── Wrapping helpers ────────────────────────────────────────────────────────
 
-/** Wrap a sync/async method to capture query details. */
-function wrapMethod(
+/** Wrap a sync/async/callback-style method to capture query details. Exported for direct unit testing. */
+export function wrapMethod(
   obj: Record<string, unknown>,
   method: string,
   source: string,
@@ -97,51 +126,124 @@ function wrapMethod(
     const executionTime = new Date().toISOString();
     const start = performance.now();
 
-    let result: unknown;
-    try {
-      result = (original as AnyFn).apply(this, args);
-    } catch (err) {
-      // Record even failed sync queries
-      recordDbQuery({
+    // Capture the request context synchronously, before any deferral to a
+    // callback or promise continuation. Pooled drivers (mysql2) dispatch
+    // query completion from internal socket I/O callbacks that don't run
+    // inside the AsyncLocalStorage scope active when the query was issued,
+    // so `storage.getStore()` would return undefined if re-checked later.
+    const ctx = getContext();
+
+    // Checked BEFORE this call marks its own scope below — reflects whether
+    // *this* call is itself a nested delegation from an already-recording
+    // outer call (see suppressNestedRecording above), not whatever this
+    // call's own children will see.
+    const isNestedDelegation = suppressNestedRecording.getStore() === true;
+
+    let recorded = false;
+    const record = (): void => {
+      if (recorded) return;
+      recorded = true;
+      if (isNestedDelegation) return; // an outer delegating call already recorded this query
+      recordDbQueryOnContext(ctx, {
         query,
         source,
         executionTime,
         queryTime: Math.round(performance.now() - start),
       });
+    };
+
+    // Callback-style call (e.g. mysql2 core `query(sql, values, cb)`): wrap the
+    // callback so timing reflects actual completion, not just dispatch.
+    const lastArg = args[args.length - 1];
+    const hasCallback = typeof lastArg === 'function';
+    if (hasCallback) {
+      const originalCb = lastArg as AnyFn;
+      args[args.length - 1] = function wrappedCallback(this: unknown, ...cbArgs: unknown[]): unknown {
+        record();
+        return originalCb.apply(this, cbArgs);
+      };
+    }
+
+    let result: unknown;
+    try {
+      // Marks this call's entire async continuation chain as "already being
+      // recorded" so any nested delegated call into another patched library
+      // suppresses itself instead of double-recording the same query.
+      result = suppressNestedRecording.run(true, () => (original as AnyFn).apply(this, args));
+    } catch (err) {
+      record();
       throw err;
     }
 
-    // Handle promises (async queries)
-    if (result && typeof (result as Promise<unknown>).then === 'function') {
-      return (result as Promise<unknown>).then(
-        (value) => {
-          recordDbQuery({
-            query,
-            source,
-            executionTime,
-            queryTime: Math.round(performance.now() - start),
-          });
-          return value;
-        },
-        (err) => {
-          recordDbQuery({
-            query,
-            source,
-            executionTime,
-            queryTime: Math.round(performance.now() - start),
-          });
-          throw err;
-        },
+    // A strict instanceof check is the safe path — real Promises (the vast
+    // majority of promise-returning drivers: pg, mysql2/promise, knex,
+    // sequelize, prisma...) always satisfy it, and objects that merely
+    // *look* thenable (see below) never do.
+    if (result instanceof Promise) {
+      return result.then(
+        (value) => { record(); return value; },
+        (err) => { record(); throw err; },
       );
     }
 
-    // Sync result (e.g. better-sqlite3)
-    recordDbQuery({
-      query,
-      source,
-      executionTime,
-      queryTime: Math.round(performance.now() - start),
-    });
+    // Some libraries return a non-Promise object that merely *looks*
+    // thenable, and throws when a caller treats it like one — either via a
+    // `.then` getter that throws on property access, or (mysql2's actual
+    // behavior) a real `.then()` METHOD whose body throws when CALLED, not
+    // when accessed ("You have tried to call .then()... on the result of
+    // query that is not a promise"). Neither the property check nor the
+    // call itself is safe on its own — both must be guarded.
+    let hasThenMethod = false;
+    try {
+      hasThenMethod = !!result && typeof (result as Record<string, unknown>).then === 'function';
+    } catch {
+      hasThenMethod = false;
+    }
+
+    if (hasThenMethod) {
+      try {
+        return (result as Promise<unknown>).then(
+          (value) => { record(); return value; },
+          (err) => { record(); throw err; },
+        );
+      } catch {
+        // Not a real thenable after all — fall through to stream/sync handling.
+      }
+    }
+
+    // Callback already scheduled to record on completion — don't double-record now.
+    if (hasCallback) return result;
+
+    // mysql2's `connection.query(sql).stream()` pattern: no callback, no
+    // promise — the command object exposes a `.stream()` method instead.
+    // Wrap it so timing reflects when the stream actually finishes (or
+    // errors), not when it was merely dispatched.
+    let streamMethod: unknown;
+    try {
+      streamMethod = result && (result as Record<string, unknown>).stream;
+    } catch {
+      streamMethod = undefined;
+    }
+
+    if (typeof streamMethod === 'function') {
+      const originalStream = streamMethod as AnyFn;
+      (result as Record<string, unknown>).stream = function wrappedStream(this: unknown, ...streamArgs: unknown[]): unknown {
+        const streamResult = originalStream.apply(this, streamArgs);
+        if (streamResult && typeof (streamResult as Record<string, unknown>).once === 'function') {
+          const emitter = streamResult as { once: (event: string, cb: AnyFn) => unknown };
+          emitter.once('end', record);
+          emitter.once('error', record);
+        } else {
+          // Can't hook completion — record now rather than never.
+          record();
+        }
+        return streamResult;
+      };
+      return result;
+    }
+
+    // Fully sync result (e.g. better-sqlite3)
+    record();
     return result;
   };
 }
@@ -176,10 +278,14 @@ function patchPg(): boolean {
   if (!pg) return false;
 
   const Client = pg.Client as { prototype?: Record<string, unknown> } | undefined;
-  const Pool = pg.Pool as { prototype?: Record<string, unknown> } | undefined;
 
+  // Only patch Client.prototype.query — Pool.prototype.query always
+  // internally acquires a Client and calls client.query(...) on it
+  // (see pg-pool's `query()`), so patching Pool too would double-count
+  // every pooled query (the overwhelmingly common usage pattern).
+  // Patching Client alone correctly covers both direct-Client and
+  // Pool-based usage since Pool funnels through it either way.
   patchPrototype(Client?.prototype, ['query'], 'pg');
-  patchPrototype(Pool?.prototype, ['query'], 'pg');
   return true;
 }
 
@@ -188,10 +294,15 @@ function patchMysql2(): boolean {
   if (!mysql2) return false;
 
   const Connection = mysql2.Connection as { prototype?: Record<string, unknown> } | undefined;
-  const Pool = mysql2.Pool as { prototype?: Record<string, unknown> } | undefined;
 
+  // Only patch Connection.prototype — Pool.prototype.query/execute acquire a
+  // PoolConnection (which `extends Connection`) and call query/execute on
+  // IT internally (see mysql2's lib/base/pool.js), so patching Pool too
+  // double-counts every pooled query — confirmed empirically: a 5,000-query
+  // load test through Pool.execute recorded 10,000 calls. Patching
+  // Connection alone still correctly covers Pool/PromisePool usage since
+  // they always funnel through it.
   patchPrototype(Connection?.prototype, ['query', 'execute'], 'mysql2');
-  patchPrototype(Pool?.prototype, ['query', 'execute'], 'mysql2');
   return true;
 }
 
@@ -247,7 +358,14 @@ function patchKnex(): boolean {
   }
 
   if (KnexClient?.prototype) {
-    patchPrototype(KnexClient.prototype, ['query'], 'knex');
+    // Client.prototype.query(connection, obj) — the SQL lives on obj.sql in
+    // the SECOND argument (the first is just a connection handle), so the
+    // generic args[0]-based extractQuery() always falls back to '(knex)'.
+    patchPrototype(KnexClient.prototype, ['query'], 'knex', () => (args) => {
+      const queryObj = args[1] as Record<string, unknown> | undefined;
+      if (queryObj && typeof queryObj.sql === 'string') return maskSqlValues(queryObj.sql);
+      return '(knex)';
+    });
     return true;
   }
   return false;

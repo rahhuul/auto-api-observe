@@ -53,13 +53,31 @@ export function createNestObservabilityInterceptor(options: ObservabilityOptions
       // rxjs tap is available in any NestJS project — dynamic require avoids
       // listing rxjs as a hard peer dep of this package.
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { tap } = require('rxjs/operators') as { tap: (fn: () => void) => any };
+      const { tap } = require('rxjs/operators') as { tap: (handlers: { next?: () => void; error?: (err: unknown) => void }) => any };
+      const ip    = req.headers?.['x-forwarded-for']?.split(',')[0].trim() ?? req.ip ?? 'unknown';
+      const route = req.route?.path ?? path;
+      // tap()'s plain `next`-only form never fires when the observable
+      // errors — a handler that throws (or a rejected async handler) would
+      // silently never get logged at all. tap()'s object form fires `error`
+      // too, without swallowing it (it still propagates to NestJS's own
+      // exception filters afterward), so error requests are logged just
+      // like successful ones.
       return next.handle().pipe(
-        tap(() => {
-          const ip    = req.headers?.['x-forwarded-for']?.split(',')[0].trim() ?? req.ip ?? 'unknown';
-          const route = req.route?.path ?? path;
-          const entry = buildEntry(opts, context, req.method ?? 'GET', route, path, res.statusCode ?? 200, ip, req.headers?.['user-agent']);
-          finalize(opts, entry);
+        tap({
+          next: () => {
+            const entry = buildEntry(opts, context, req.method ?? 'GET', route, path, res.statusCode ?? 200, ip, req.headers?.['user-agent']);
+            finalize(opts, entry);
+          },
+          error: (err: unknown) => {
+            const status = Number(
+              (err as { getStatus?: () => number })?.getStatus?.()
+                ?? (err as { status?: number }).status
+                ?? (err as { statusCode?: number }).statusCode
+                ?? 500,
+            );
+            const entry = buildEntry(opts, context, req.method ?? 'GET', route, path, status, ip, req.headers?.['user-agent']);
+            finalize(opts, entry);
+          },
         }),
       );
     }

@@ -86,6 +86,31 @@ describe('createExpressMiddleware — basics', () => {
   });
 });
 
+describe('createExpressMiddleware — logs entries for handlers that throw', () => {
+  // Express hooks res.end() rather than relying on the handler completing
+  // successfully, so a thrown error (caught by an error-handling middleware
+  // that still sends a response) should still be logged. Regression guard
+  // for the class of bug found in Koa/NestJS/Elysia: a naive
+  // "log after next() resolves" implementation misses error requests
+  // entirely.
+  it('logs a request whose handler throws, once an error handler sends a response', async () => {
+    const entries: unknown[] = [];
+    const app = express();
+    app.use(createExpressMiddleware({ apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) }));
+    app.get('/boom', () => { throw new Error('boom'); });
+    app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(500).json({ error: err.message });
+    });
+    const server = await startServer(app);
+
+    const res = await request(server, { path: '/boom' });
+    expect(res.status).toBe(500);
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as { status: number }).status).toBe(500);
+    server.close();
+  });
+});
+
 describe('createExpressMiddleware — skipRoutes', () => {
   let server: http.Server;
 

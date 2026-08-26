@@ -83,6 +83,53 @@ describe('createNestObservabilityInterceptor', () => {
     expect(typeof Interceptor).toBe('function');
     expect(spy).not.toHaveBeenCalled();
   });
+
+  // Real rxjs Observables — not a fake `{ pipe: () => 'piped' }` mock. This
+  // is exactly what the earlier mock-based test missed: `tap(fn)`'s plain
+  // (next-only) form never fires when the observable errors, so a request
+  // whose handler threw was silently never logged at all. Regression guard
+  // using the real rxjs error-propagation semantics.
+  describe('with real rxjs Observables', () => {
+    it('logs a successful request with status 200', async () => {
+      const { of } = await import('rxjs');
+      const entries: unknown[] = [];
+      const Interceptor = createNestObservabilityInterceptor({ apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) });
+      const instance = new Interceptor();
+      const res: Record<string, unknown> = { statusCode: 200, setHeader: () => {} };
+      const mockCtx = { switchToHttp: () => ({ getRequest: () => ({ headers: {} }), getResponse: () => res }) };
+      const mockHandle = { handle: () => of({ ok: true }) };
+
+      const result = await new Promise((resolve, reject) => {
+        instance.intercept(mockCtx as any, mockHandle as any).subscribe({ next: resolve, error: reject });
+      });
+
+      expect(result).toEqual({ ok: true });
+      expect(entries).toHaveLength(1);
+      expect((entries[0] as { status: number }).status).toBe(200);
+    });
+
+    it('logs a request whose handler errors, and still propagates the error to the subscriber', async () => {
+      const { throwError } = await import('rxjs');
+      const entries: unknown[] = [];
+      const Interceptor = createNestObservabilityInterceptor({ apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) });
+      const instance = new Interceptor();
+      const res: Record<string, unknown> = { statusCode: 200, setHeader: () => {} };
+      const mockCtx = { switchToHttp: () => ({ getRequest: () => ({ headers: {} }), getResponse: () => res }) };
+      const boomError = new Error('boom');
+      const mockHandle = { handle: () => throwError(() => boomError) };
+
+      const caughtError = await new Promise((resolve) => {
+        instance.intercept(mockCtx as any, mockHandle as any).subscribe({
+          next: () => resolve(null),
+          error: (err: unknown) => resolve(err),
+        });
+      });
+
+      expect(caughtError).toBe(boomError); // error was NOT swallowed
+      expect(entries).toHaveLength(1);
+      expect((entries[0] as { status: number }).status).toBe(500);
+    });
+  });
 });
 
 // ─── Next.js ──────────────────────────────────────────────────────────────────
@@ -148,21 +195,38 @@ describe('hapiObservabilityPlugin', () => {
 // ─── Elysia ───────────────────────────────────────────────────────────────────
 
 describe('elysiaObservability', () => {
-  it('returns a plugin object with name and setup function', () => {
+  // Elysia's `.use()` calls a plain function plugin as `plugin(app)` and
+  // uses its return value (current v1.x plugin contract) — an older
+  // `{ name, version, setup(app) }` object shape is NOT handled by `.use()`
+  // in current Elysia and throws instead.
+  it('returns a plain function plugin', () => {
     const spy = WARN_SPY();
     const plugin = elysiaObservability({});
-    expect(plugin.name).toBe('auto-api-observe');
-    expect(typeof plugin.setup).toBe('function');
+    expect(typeof plugin).toBe('function');
   });
 
-  it('setup is a no-op (returns app unchanged) when no apiKey', () => {
+  it('is a no-op (returns app unchanged) when no apiKey', () => {
     const spy = WARN_SPY();
     const plugin = elysiaObservability({});
-    const mockApp = { onRequest: () => mockApp, onAfterHandle: () => mockApp };
-    const result = plugin.setup(mockApp);
+    const mockApp = { onRequest: () => mockApp, onAfterHandle: () => mockApp, onError: () => mockApp };
+    const result = plugin(mockApp);
     // No-apiKey path returns app without attaching hooks
     expect(result).toBe(mockApp);
     expect(spy).toHaveBeenCalledOnce();
+  });
+
+  it('attaches onRequest, onAfterHandle, and onError hooks when apiKey is provided', () => {
+    const spy = WARN_SPY();
+    const plugin = elysiaObservability({ apiKey: 'test_key', logger: false, processMetrics: false });
+    const hooksAttached: string[] = [];
+    const mockApp: Record<string, unknown> = {};
+    for (const hook of ['onRequest', 'onAfterHandle', 'onError']) {
+      mockApp[hook] = (_fn: unknown) => { hooksAttached.push(hook); return mockApp; };
+    }
+    const result = plugin(mockApp);
+    expect(result).toBe(mockApp);
+    expect(hooksAttached).toEqual(['onRequest', 'onAfterHandle', 'onError']);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
