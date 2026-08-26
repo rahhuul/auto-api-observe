@@ -13,5 +13,7 @@ export default defineConfig({
     // fault (core dumped)", exit code 139, right after the DB integration
     // tests ran under the default 'threads' pool.
     pool: 'forks',
+    // See tests/setup/node18-crypto.ts for why this is needed on Node 18.x.
+    setupFiles: ['./tests/setup/node18-crypto.ts'],
   },
 });

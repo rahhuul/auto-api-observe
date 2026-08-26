@@ -7,7 +7,17 @@ import Database from 'better-sqlite3';
 import { autoInstrument } from '../../../src/core/instrument';
 import { makeContext, storage } from './helpers';
 
-describe('better-sqlite3', () => {
+// better-sqlite3@13 declares `engines.node: >=22` — its N-API binding
+// reliably segfaults (not just a warning) when loaded under Node 18 or 20.
+// Confirmed via a clean install (no --ignore-scripts) in fresh Node 18 and
+// Node 20 containers: both crash with SIGSEGV; Node 22 works. This is a
+// test-infra-only constraint — better-sqlite3 is a devDependency used only
+// to exercise src/core/instrument.ts's patcher, so running this file once
+// on Node 22 (already in the CI matrix) gives full coverage of that code
+// path without needing every Node version to load the native binary.
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+
+describe.skipIf(nodeMajor < 22)('better-sqlite3', () => {
   let db: Database.Database;
 
   beforeAll(() => {
