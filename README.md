@@ -482,7 +482,7 @@ import observe, {
 git clone https://github.com/rahhuul/auto-api-observe.git
 cd auto-api-observe
 npm install
-npm test       # 107 tests across 10 files
+npm test       # 158 tests across 25 files
 npm run build  # TypeScript compile check
 ```
 
