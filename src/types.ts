@@ -61,6 +61,10 @@ export interface ObservabilityOptions {
 
   /**
    * Static key/value tags attached to every event (e.g. service name, version, env).
+   * Every event already carries an auto-detected `hostname` and `pid` even if
+   * you never set this — useful on its own for telling apart multiple
+   * apps/instances sharing one API key. Tags you pass here merge on top and
+   * win on key collisions.
    * @example { service: 'user-api', version: '2.1.0', env: 'production' }
    */
   tags?: Record<string, string>;

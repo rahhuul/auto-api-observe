@@ -26,7 +26,12 @@ function getIp(req: NextRequest): string {
 }
 
 /**
- * Wraps a Next.js API route handler with observability.
+ * Wraps a Next.js **Pages Router** API route handler with observability.
+ *
+ * For **App Router** route handlers (`app/api/.../route.ts`), use
+ * {@link withAppRouterObservability} instead — App Router handlers receive a
+ * Fetch API `Request` and return a `Response`, not the Node.js `(req, res)`
+ * pair this function expects.
  *
  * @example
  * // pages/api/users.ts
@@ -66,5 +71,79 @@ export function withObservability(handler: NextHandler, options: ObservabilityOp
     };
 
     await storage.run(context, () => handler(req, res));
+  };
+}
+
+// ─── App Router ─────────────────────────────────────────────────────────────
+
+// App Router route handlers use the Fetch API — a `Request` in, a `Response`
+// out, no mutable response object. `context.params` is typed loosely (plain
+// object or Promise) since Next.js 15 made dynamic-route params async while
+// 13/14 kept them synchronous; this wrapper never inspects it, only forwards
+// it, so it's compatible with either.
+type AppRouteContext = { params?: unknown };
+type AppRouteHandler = (request: Request, context: AppRouteContext) => Response | Promise<Response>;
+
+function getAppRouterIp(request: Request): string {
+  const fwd = request.headers.get('x-forwarded-for');
+  return fwd ? fwd.split(',')[0].trim() : 'unknown';
+}
+
+/**
+ * Wraps a Next.js **App Router** route handler (`app/api/.../route.ts`) with
+ * observability. For the legacy **Pages Router** (`pages/api/*.ts`), use
+ * {@link withObservability} instead.
+ *
+ * @example
+ * // app/api/users/route.ts
+ * import { withAppRouterObservability } from 'auto-api-observe';
+ * export const GET = withAppRouterObservability(async (request) => {
+ *   return Response.json({ users: [] });
+ * }, { apiKey: process.env.APILENS_KEY });
+ */
+export function withAppRouterObservability(handler: AppRouteHandler, options: ObservabilityOptions = {}): AppRouteHandler {
+  const opts = setup(options);
+  if (!opts) return handler;
+
+  return async function observedAppRouteHandler(request: Request, context: AppRouteContext = {}): Promise<Response> {
+    const path = (() => { try { return new URL(request.url).pathname; } catch { return request.url; } })();
+    if (shouldSkip(path, opts.skipRoutes)) return handler(request, context);
+
+    const traceId = request.headers.get(opts.traceHeader) ?? generateTraceId();
+    const ip = getAppRouterIp(request);
+    const userAgent = request.headers.get('user-agent') ?? undefined;
+
+    const reqContext: RequestContext = {
+      traceId,
+      startTime:     Date.now(),
+      dbCalls:       0,
+      dbCallsDetail: createDbCalls(),
+      customFields:  {},
+    };
+
+    if (opts.onRequest) opts.onRequest(reqContext);
+
+    let response: Response;
+    try {
+      response = await storage.run(reqContext, () => handler(request, context));
+    } catch (err) {
+      const entry = buildEntry(opts, reqContext, request.method ?? 'GET', path, path, 500, ip, userAgent);
+      finalize(opts, entry);
+      throw err;
+    }
+
+    const entry = buildEntry(opts, reqContext, request.method ?? 'GET', path, path, response.status, ip, userAgent);
+    finalize(opts, entry);
+
+    // Response is immutable once constructed — clone it to add the trace
+    // header rather than mutating (there's nothing to mutate). Wrapping
+    // response.body (a stream, or null) doesn't consume it.
+    const headers = new Headers(response.headers);
+    headers.set(opts.traceHeader, traceId);
+    return new Response(response.body, {
+      status:     response.status,
+      statusText: response.statusText,
+      headers,
+    });
   };
 }

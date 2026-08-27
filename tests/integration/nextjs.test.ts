@@ -6,7 +6,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'events';
-import { withObservability as withNextObservability } from '../../src/middleware/nextjs';
+import { withObservability as withNextObservability, withAppRouterObservability } from '../../src/middleware/nextjs';
 
 type FakeRes = EventEmitter & {
   statusCode: number;
@@ -68,6 +68,69 @@ describe('withNextObservability — logs entries for handlers that throw', () =>
     }
 
     expect(threw).toBe(true);
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as { status: number }).status).toBe(500);
+  });
+});
+
+/**
+ * App Router route handlers get a real Fetch API `Request` and a
+ * `{ params }` context — no (req, res) pair — invoked positionally exactly
+ * like this by Next.js's own resolver. Regression guard for the previous
+ * bug where withObservability (built for Pages Router) crashed immediately
+ * with "res.setHeader is not a function" when used this way.
+ */
+describe('withAppRouterObservability — basics', () => {
+  it('logs a successful request with status 200 and returns a working Response', async () => {
+    const entries: unknown[] = [];
+    const handler = withAppRouterObservability(
+      async (_request) => Response.json({ ok: true }),
+      { apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) },
+    );
+
+    const request = new Request('http://localhost/api/hello');
+    const response = await handler(request, { params: {} });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as { status: number }).status).toBe(200);
+  });
+
+  it('adds the trace header to the returned response', async () => {
+    const handler = withAppRouterObservability(
+      async () => Response.json({ ok: true }),
+      { apiKey: 'test_key', logger: false },
+    );
+
+    const request = new Request('http://localhost/api/hello');
+    const response = await handler(request, { params: {} });
+
+    expect(response.headers.get('x-trace-id')).toBeTruthy();
+  });
+
+  it('forwards dynamic route params to the handler untouched', async () => {
+    const handler = withAppRouterObservability(
+      async (_request, context: { params?: unknown }) => Response.json({ params: context.params }),
+      { apiKey: 'test_key', logger: false },
+    );
+
+    const request = new Request('http://localhost/api/users/42');
+    const response = await handler(request, { params: { id: '42' } });
+
+    expect(await response.json()).toEqual({ params: { id: '42' } });
+  });
+
+  it('logs a request whose handler throws with status 500, and re-throws', async () => {
+    const entries: unknown[] = [];
+    const handler = withAppRouterObservability(
+      async () => { throw new Error('boom'); },
+      { apiKey: 'test_key', logger: false, onResponse: (e) => entries.push(e) },
+    );
+
+    const request = new Request('http://localhost/api/boom');
+    await expect(handler(request, { params: {} })).rejects.toThrow('boom');
+
     expect(entries).toHaveLength(1);
     expect((entries[0] as { status: number }).status).toBe(500);
   });

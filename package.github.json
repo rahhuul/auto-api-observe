@@ -1,6 +1,6 @@
 {
   "name": "@rahhuul/auto-api-observe",
-  "version": "1.3.0",
+  "version": "1.4.1",
   "description": "Zero-config observability for Node.js APIs — Express, Fastify, Koa, Hono, NestJS, Next.js, Hapi, Elysia, Apollo, Lambda, tRPC, Restify. Request tracing, DB profiling, slow-request detection, and real-time metrics.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,13 +13,63 @@
   "keywords": [
     "observability", "express", "fastify", "koa", "hono", "nestjs", "nextjs",
     "hapi", "elysia", "apollo", "lambda", "trpc", "restify", "middleware",
-    "metrics", "tracing", "logging", "monitoring", "apm", "api-monitoring"
+    "metrics", "tracing", "logging", "monitoring", "performance", "apm",
+    "api-monitoring", "request-logging", "api-analytics", "express-middleware",
+    "fastify-plugin", "structured-logging", "distributed-tracing",
+    "slow-request-detection", "db-profiling", "error-tracking", "node-monitoring"
   ],
   "author": "rahhuul",
   "license": "MIT",
+  "peerDependencies": {
+    "@apollo/server": ">=4.0.0",
+    "@hapi/hapi": ">=20.0.0",
+    "@nestjs/common": ">=9.0.0",
+    "elysia": ">=0.7.0",
+    "express": ">=4.0.0",
+    "fastify": ">=4.0.0",
+    "hono": ">=3.0.0",
+    "koa": ">=2.0.0",
+    "next": ">=13.0.0",
+    "rxjs": ">=7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    },
+    "fastify": {
+      "optional": true
+    },
+    "koa": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    },
+    "@nestjs/common": {
+      "optional": true
+    },
+    "rxjs": {
+      "optional": true
+    },
+    "@hapi/hapi": {
+      "optional": true
+    },
+    "elysia": {
+      "optional": true
+    },
+    "@apollo/server": {
+      "optional": true
+    },
+    "next": {
+      "optional": true
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rahhuul/auto-api-observe.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rahhuul/auto-api-observe/issues"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

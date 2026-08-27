@@ -1,3 +1,4 @@
+import * as os from 'os';
 import { ObservabilityOptions, LogEntry, LoggerFn, RequestContext } from '../types';
 import { defaultLogger } from './logger';
 import { recordMetric } from './metrics';
@@ -78,17 +79,28 @@ export function setup(options: ObservabilityOptions): ResolvedOptions | null {
   const shipper   = new RemoteShipper({ apiKey, endpoint, flushInterval, flushSize });
   const wsClient  = new WsProcessClient(apiKey, endpoint);
 
+  // Auto-detected so every event is attributable to a source even when the
+  // same API key is reused across multiple apps/instances and `tags` is
+  // never set. hostname distinguishes different machines/containers; pid
+  // distinguishes multiple processes on the same machine (e.g. `pm2 -i N`).
+  // User-supplied tags win on key collisions.
+  const resolvedTags: Record<string, string> = {
+    hostname: os.hostname(),
+    pid:      String(process.pid),
+    ...tags,
+  };
+
   // One-time startup event over WebSocket (no quota impact)
-  shipStartupEvent(wsClient, tags);
+  shipStartupEvent(wsClient, resolvedTags);
 
   // Background process metrics over WebSocket (no quota impact)
   if (processMetrics !== false && processMetrics > 0) {
-    startProcessMetrics(wsClient, tags, processMetrics);
+    startProcessMetrics(wsClient, resolvedTags, processMetrics);
   }
 
   // Opt-in error capture over WebSocket
   if (shouldCaptureErrors) {
-    captureUnhandledErrors(wsClient, tags);
+    captureUnhandledErrors(wsClient, resolvedTags);
   }
 
   return {
@@ -99,7 +111,7 @@ export function setup(options: ObservabilityOptions): ResolvedOptions | null {
     traceHeader,
     maxRoutes,
     sampleRate,
-    tags,
+    tags: resolvedTags,
     onRequest,
     onResponse,
     shipper,
@@ -140,7 +152,7 @@ export function buildEntry(
     requestSize:   extras?.requestSize,
     responseSize:  extras?.responseSize,
     outboundCalls: context.outboundCalls?.length ? context.outboundCalls : undefined,
-    tags:          Object.keys(opts.tags).length ? opts.tags : undefined,
+    tags:          opts.tags,
     ...maskCustomFields(context.customFields),
   };
 }

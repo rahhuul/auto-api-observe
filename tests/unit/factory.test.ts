@@ -55,13 +55,16 @@ describe('setup — with apiKey', () => {
     expect(opts!.sampleRate).toBe(1.0);
     expect(opts!.maxRoutes).toBe(1000);
     expect(opts!.traceHeader).toBe('x-trace-id');
-    expect(opts!.tags).toEqual({});
+    expect(opts!.tags).toHaveProperty('hostname');
+    expect(opts!.tags).toHaveProperty('pid');
   });
 
-  it('applies custom tags', () => {
+  it('applies custom tags on top of auto-detected hostname/pid', () => {
     const tags = { service: 'api', env: 'test' };
     const opts = setup({ apiKey: 'test_key', logger: false, processMetrics: false, tags });
-    expect(opts!.tags).toEqual(tags);
+    expect(opts!.tags).toMatchObject(tags);
+    expect(opts!.tags).toHaveProperty('hostname');
+    expect(opts!.tags).toHaveProperty('pid');
   });
 
   it('respects custom slowThreshold', () => {
@@ -113,15 +116,18 @@ describe('buildEntry', () => {
     expect(entry.responseSize).toBeUndefined();
   });
 
-  it('attaches global tags to entry', () => {
+  it('attaches global tags to entry, merged with auto-detected hostname/pid', () => {
     const taggedOpts = setup({ apiKey: 'test_key', logger: false, processMetrics: false, tags: { service: 'user-api', env: 'prod' } });
     const entry = buildEntry(taggedOpts!, makeContext(), 'GET', '/', '/', 200, '', undefined);
-    expect(entry.tags).toEqual({ service: 'user-api', env: 'prod' });
+    expect(entry.tags).toMatchObject({ service: 'user-api', env: 'prod' });
+    expect(entry.tags).toHaveProperty('hostname');
+    expect(entry.tags).toHaveProperty('pid');
   });
 
-  it('omits tags field when tags is empty object', () => {
+  it('still attaches auto-detected hostname/pid when tags is never configured', () => {
     const entry = buildEntry(opts!, makeContext(), 'GET', '/', '/', 200, '', undefined);
-    expect(entry.tags).toBeUndefined();
+    expect(entry.tags).toHaveProperty('hostname');
+    expect(entry.tags).toHaveProperty('pid');
   });
 
   it('includes outboundCalls when present', () => {

@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.4.1] — 2026-08-27
+
+### Added
+- **`withAppRouterObservability`** — Next.js **App Router** support (`app/api/.../route.ts`). The existing `withNextObservability` only ever worked with the legacy Pages Router `(req, res)` signature; App Router route handlers use the Fetch API (`Request` in, `Response` out) and previously crashed immediately with `res.setHeader is not a function` if wrapped with `withNextObservability`. This is a separate function, not a behavior change to the existing one.
+- **Automatic `hostname`/`pid` tagging** — every event now carries the machine hostname and process ID by default, with no configuration required. Lets you tell apart multiple apps/instances sharing one API key (e.g. several services, or `pm2 -i N` replicas on the same host) out of the box. Any `tags` you pass explicitly still merge on top and win on key collisions.
+
+### Fixed
+- `withNextObservability`'s doc comment previously (incorrectly) claimed it worked with both Pages Router and App Router — corrected to point Next.js App Router users at `withAppRouterObservability`.
+
+---
+
 ## [1.3.0] — 2026-04-28
 
 ### Added

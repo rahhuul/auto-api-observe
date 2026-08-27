@@ -28,6 +28,7 @@ export { koaObservability }                                from './middleware/ko
 export { honoObservability }                               from './middleware/hono';
 export { createNestObservabilityInterceptor }              from './middleware/nestjs';
 export { withObservability as withNextObservability }      from './middleware/nextjs';
+export { withAppRouterObservability }                      from './middleware/nextjs';
 export { hapiObservabilityPlugin }                         from './middleware/hapi';
 export { elysiaObservability }                             from './middleware/elysia';
 export { apolloObservabilityPlugin }                       from './middleware/apollo';
@@ -64,6 +65,7 @@ import { koaObservability }                             from './middleware/koa';
 import { honoObservability }                            from './middleware/hono';
 import { createNestObservabilityInterceptor }           from './middleware/nestjs';
 import { withObservability as withNextObservability }   from './middleware/nextjs';
+import { withAppRouterObservability }                   from './middleware/nextjs';
 import { hapiObservabilityPlugin }                      from './middleware/hapi';
 import { elysiaObservability }                          from './middleware/elysia';
 import { apolloObservabilityPlugin }                    from './middleware/apollo';
@@ -89,6 +91,7 @@ if (typeof module !== 'undefined') {
   module.exports.honoObservability                  = honoObservability;
   module.exports.createNestObservabilityInterceptor = createNestObservabilityInterceptor;
   module.exports.withNextObservability              = withNextObservability;
+  module.exports.withAppRouterObservability          = withAppRouterObservability;
   module.exports.hapiObservabilityPlugin            = hapiObservabilityPlugin;
   module.exports.elysiaObservability                = elysiaObservability;
   module.exports.apolloObservabilityPlugin          = apolloObservabilityPlugin;
