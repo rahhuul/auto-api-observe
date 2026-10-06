@@ -26,26 +26,7 @@
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { recordDbQueryOnContext, recordOutboundCall, getContext } from './storage';
-import { autoInstrumentLlm } from './llm-instrument';
 import type { DbQuery } from '../types';
-
-/**
- * True for an aborted/timed-out request specifically, not a generic network
- * failure — checks the conventional signals across the three outbound
- * clients we patch (native AbortController's `AbortError`, axios's
- * `ECONNABORTED`/`ETIMEDOUT`, undici's `UND_ERR_ABORTED`/`UND_ERR_CONNECT_TIMEOUT`).
- */
-function isTimeoutError(err: unknown): boolean {
-  const e = err as { name?: string; code?: string } | undefined;
-  if (!e) return false;
-  if (e.name === 'AbortError' || e.name === 'TimeoutError') return true;
-  return e.code === 'ECONNABORTED'
-    || e.code === 'ETIMEDOUT'
-    || e.code === 'UND_ERR_ABORTED'
-    || e.code === 'UND_ERR_CONNECT_TIMEOUT'
-    || e.code === 'UND_ERR_HEADERS_TIMEOUT'
-    || e.code === 'UND_ERR_BODY_TIMEOUT';
-}
 
 type AnyFn = (...args: unknown[]) => unknown;
 
@@ -537,7 +518,6 @@ function patchAxios(): boolean {
         url:      maskUrl(String(cfg?.url ?? '')),
         status:   Number((error.response as Record<string, unknown> | undefined)?.status ?? 0),
         latency:  Math.round(performance.now() - Number(cfg?.__apilens_start ?? performance.now())),
-        timedOut: isTimeoutError(error),
       });
       throw error;
     },
@@ -570,7 +550,7 @@ function patchFetch(): boolean {
       recordOutboundCall({ method, url: maskUrl(url), status: res.status, latency: Math.round(performance.now() - start) });
       return res;
     } catch (err) {
-      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start), timedOut: isTimeoutError(err) });
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
       throw err;
     }
   };
@@ -595,7 +575,7 @@ function patchUndici(): boolean {
       recordOutboundCall({ method, url: maskUrl(url), status: Number(res.status ?? 0), latency: Math.round(performance.now() - start) });
       return res;
     } catch (err) {
-      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start), timedOut: isTimeoutError(err) });
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
       throw err;
     }
   };
@@ -614,7 +594,7 @@ export interface InstrumentResult {
  * Auto-detect and patch all installed database libraries.
  * Called once when the middleware initializes.
  */
-export function autoInstrument(includeOutbound = false, includeLlm = true): InstrumentResult {
+export function autoInstrument(includeOutbound = false): InstrumentResult {
   const patchers: Array<[string, () => boolean]> = [
     ['pg',              patchPg],
     ['mysql2',          patchMysql2],
@@ -643,10 +623,6 @@ export function autoInstrument(includeOutbound = false, includeLlm = true): Inst
     try { if (patchAxios())  patched.push('axios');  } catch {}
     try { if (patchFetch())  patched.push('fetch');  } catch {}
     try { if (patchUndici()) patched.push('undici'); } catch {}
-  }
-
-  if (includeLlm) {
-    patched.push(...autoInstrumentLlm());
   }
 
   return { patched, total: patched.length };
