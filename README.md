@@ -43,7 +43,7 @@ You need to know:
 - Which third-party API is adding latency to your response time?
 - Can you follow one request across services?
 
-Datadog wants $23/host/month and an afternoon of agent config. `auto-api-observe` answers those questions with one line and no agent:
+Datadog wants a per-host bill that scales with your infrastructure and an afternoon of agent config. `auto-api-observe` answers those questions with one line and no agent:
 
 ```js
 app.use(observe({ apiKey: process.env.APILENS_KEY }));
@@ -625,6 +625,26 @@ Use `auto-api-observe` when you:
 - don't want to operate a full observability stack for one API
 
 It isn't trying to replace a large enterprise observability platform. If you need broad infrastructure monitoring across many systems, a bigger stack may be the better fit.
+
+---
+
+## Performance
+
+Roughly **1.1–1.5ms average overhead per request**, measured with a controlled benchmark (not estimated) — [`autocannon`](https://github.com/mcollina/autocannon), 50 concurrent connections, ~10,000 req/sec sustained throughput in both cases.
+
+Clone the repo and reproduce it yourself in under 2 minutes:
+
+```bash
+git clone https://github.com/rahhuul/auto-api-observe.git && cd auto-api-observe
+npm install && npm run build
+node benchmark/mock-ingest.js &
+node benchmark/baseline-server.js &
+node benchmark/observed-server.js &
+npx autocannon -c 50 -a 10000 http://localhost:4000/ping   # baseline
+npx autocannon -c 50 -a 10000 http://localhost:4001/ping   # observed
+```
+
+Full methodology and results in [`benchmark/`](./benchmark), writeup at [apilens.rest/blog/zero-config-apm-event-loop-benchmark](https://apilens.rest/blog/zero-config-apm-event-loop-benchmark).
 
 ---
 
