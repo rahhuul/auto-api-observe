@@ -3,7 +3,7 @@
  * in-memory) so this always runs, no reachability gate.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import { autoInstrument } from '../../../src/core/instrument';
 import { makeContext, storage } from './helpers';
 
@@ -15,14 +15,21 @@ import { makeContext, storage } from './helpers';
 // to exercise src/core/instrument.ts's patcher, so running this file once
 // on Node 22 (already in the CI matrix) gives full coverage of that code
 // path without needing every Node version to load the native binary.
+//
+// The import above is type-only and erased at compile time — the actual
+// module is loaded dynamically inside beforeAll below, so describe.skipIf
+// genuinely prevents the native binary from ever being loaded on Node <22.
+// A static `import Database from 'better-sqlite3'` at the top of the file
+// would run before skipIf takes effect and crash the worker regardless.
 const nodeMajor = Number(process.versions.node.split('.')[0]);
 
 describe.skipIf(nodeMajor < 22)('better-sqlite3', () => {
   let db: Database.Database;
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    const { default: BetterSqlite3 } = await import('better-sqlite3');
     autoInstrument();
-    db = new Database(':memory:');
+    db = new BetterSqlite3(':memory:');
     db.exec('CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)');
   });
 

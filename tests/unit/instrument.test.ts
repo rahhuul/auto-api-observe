@@ -138,9 +138,16 @@ describe('recordDbQuery', () => {
 // Postgres/SQLite quote column/table names) were being masked as if they
 // were string literals, turning every Drizzle-generated query into
 // `select "?", "?" from "?"`.
-describe('Drizzle ORM (via better-sqlite3)', () => {
+//
+// better-sqlite3@13 declares `engines.node: >=22` — its N-API binding
+// segfaults the whole worker process (not a catchable test failure) when
+// require()'d under Node 18 or 20. Same constraint and guard as
+// tests/integration/databases/better-sqlite3.test.ts.
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+
+describe.skipIf(nodeMajor < 22)('Drizzle ORM (via better-sqlite3)', () => {
   it('captures a real query with correct text, source, and timing', async () => {
-    autoInstrument(false, false);
+    autoInstrument(false);
 
     const Database = require('better-sqlite3');
     const { drizzle } = require('drizzle-orm/better-sqlite3');
