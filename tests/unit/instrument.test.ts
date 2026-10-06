@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { storage, trackDbCall, recordDbQuery, createDbCalls } from '../../src/core/storage';
+import { storage, getContext, trackDbCall, recordDbQuery, createDbCalls } from '../../src/core/storage';
 import { autoInstrument } from '../../src/core/instrument';
 import type { RequestContext } from '../../src/types';
 
@@ -126,6 +126,43 @@ describe('recordDbQuery', () => {
       recordDbQuery({ query: 'slow', source: 'pg', executionTime: '', queryTime: 500 });
       recordDbQuery({ query: 'medium', source: 'pg', executionTime: '', queryTime: 50 });
       expect(ctx.dbCallsDetail.slowestQuery).toBe(500);
+    });
+  });
+});
+
+// Drizzle has no dedicated patcher — it's captured transparently because
+// drizzle-orm/better-sqlite3 (like node-postgres and mysql2) calls straight
+// into the already-patched driver method. This test exists to (a) lock that
+// behavior in against regressions and (b) catch the real maskSqlValues bug
+// this uncovered: double-quoted SQL identifiers ("users", "id" — how
+// Postgres/SQLite quote column/table names) were being masked as if they
+// were string literals, turning every Drizzle-generated query into
+// `select "?", "?" from "?"`.
+describe('Drizzle ORM (via better-sqlite3)', () => {
+  it('captures a real query with correct text, source, and timing', async () => {
+    autoInstrument(false, false);
+
+    const Database = require('better-sqlite3');
+    const { drizzle } = require('drizzle-orm/better-sqlite3');
+    const { sqliteTable, integer, text } = require('drizzle-orm/sqlite-core');
+
+    const sqlite = new Database(':memory:');
+    sqlite.exec('CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)');
+    sqlite.exec("INSERT INTO users (id, name) VALUES (1, 'Alice')");
+
+    const users = sqliteTable('users', { id: integer('id').primaryKey(), name: text('name') });
+    const db = drizzle(sqlite);
+
+    const ctx = makeContext();
+    await storage.run(ctx, async () => {
+      const rows = await db.select().from(users);
+      expect(rows).toEqual([{ id: 1, name: 'Alice' }]);
+
+      const captured = getContext()!.dbCallsDetail;
+      expect(captured.calls).toBe(1);
+      expect(captured.queries[0].source).toBe('better-sqlite3');
+      // The real regression check: identifiers must survive untouched.
+      expect(captured.queries[0].query).toBe('select "id", "name" from "users"');
     });
   });
 });

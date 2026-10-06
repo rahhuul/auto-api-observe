@@ -12,11 +12,40 @@
  *   - prisma (@prisma/client)     — PrismaClient._request
  *   - better-sqlite3              — Database.prepare().run/get/all
  *   - sequelize                   — Sequelize.query
+ *
+ * Not independently patched, but captured anyway (same reasoning as Knex/
+ * Prisma/Sequelize above — see suppressNestedRecording): Drizzle ORM, when
+ * used via drizzle-orm/node-postgres, drizzle-orm/mysql2, or
+ * drizzle-orm/better-sqlite3 — each of those drivers calls straight into
+ * the already-patched pg/mysql2/better-sqlite3 methods under the hood.
+ * Verified empirically, 2026-10-06. drizzle-orm/postgres-js (the `postgres`
+ * package) is NOT yet covered — it has no shared prototype to patch (every
+ * client is built from closures), so it would need a require-cache-level
+ * patch instead of the prototype patches used everywhere else here.
  */
 
 import { AsyncLocalStorage } from 'async_hooks';
 import { recordDbQueryOnContext, recordOutboundCall, getContext } from './storage';
+import { autoInstrumentLlm } from './llm-instrument';
 import type { DbQuery } from '../types';
+
+/**
+ * True for an aborted/timed-out request specifically, not a generic network
+ * failure — checks the conventional signals across the three outbound
+ * clients we patch (native AbortController's `AbortError`, axios's
+ * `ECONNABORTED`/`ETIMEDOUT`, undici's `UND_ERR_ABORTED`/`UND_ERR_CONNECT_TIMEOUT`).
+ */
+function isTimeoutError(err: unknown): boolean {
+  const e = err as { name?: string; code?: string } | undefined;
+  if (!e) return false;
+  if (e.name === 'AbortError' || e.name === 'TimeoutError') return true;
+  return e.code === 'ECONNABORTED'
+    || e.code === 'ETIMEDOUT'
+    || e.code === 'UND_ERR_ABORTED'
+    || e.code === 'UND_ERR_CONNECT_TIMEOUT'
+    || e.code === 'UND_ERR_HEADERS_TIMEOUT'
+    || e.code === 'UND_ERR_BODY_TIMEOUT';
+}
 
 type AnyFn = (...args: unknown[]) => unknown;
 
@@ -51,9 +80,13 @@ const suppressNestedRecording = new AsyncLocalStorage<true>();
 
 function maskSqlValues(sql: string): string {
   return sql
-    // Mask quoted strings: 'value' or "value" → '?'
+    // Mask single-quoted string literals: 'value' → '?'. Double-quoted
+    // segments are deliberately left untouched — in every dialect this file
+    // targets (Postgres, SQLite, MySQL ANSI mode), double quotes delimit
+    // IDENTIFIERS ("users", "id"), not values, so masking them turned every
+    // quoted-identifier query (notably anything Drizzle-generated) into
+    // nonsense like `select "?", "?" from "?"` instead of redacting data.
     .replace(/'[^']*'/g, "'?'")
-    .replace(/"[^"]*"/g, '"?"')
     // Mask numbers (standalone, not inside identifiers)
     .replace(/\b\d+(\.\d+)?\b/g, '?')
     // Collapse whitespace
@@ -500,10 +533,11 @@ function patchAxios(): boolean {
     (error: Record<string, unknown>) => {
       const cfg = error.config as Record<string, unknown> | undefined;
       recordOutboundCall({
-        method:  String(cfg?.method ?? 'GET').toUpperCase(),
-        url:     maskUrl(String(cfg?.url ?? '')),
-        status:  Number((error.response as Record<string, unknown> | undefined)?.status ?? 0),
-        latency: Math.round(performance.now() - Number(cfg?.__apilens_start ?? performance.now())),
+        method:   String(cfg?.method ?? 'GET').toUpperCase(),
+        url:      maskUrl(String(cfg?.url ?? '')),
+        status:   Number((error.response as Record<string, unknown> | undefined)?.status ?? 0),
+        latency:  Math.round(performance.now() - Number(cfg?.__apilens_start ?? performance.now())),
+        timedOut: isTimeoutError(error),
       });
       throw error;
     },
@@ -536,7 +570,7 @@ function patchFetch(): boolean {
       recordOutboundCall({ method, url: maskUrl(url), status: res.status, latency: Math.round(performance.now() - start) });
       return res;
     } catch (err) {
-      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start), timedOut: isTimeoutError(err) });
       throw err;
     }
   };
@@ -561,7 +595,7 @@ function patchUndici(): boolean {
       recordOutboundCall({ method, url: maskUrl(url), status: Number(res.status ?? 0), latency: Math.round(performance.now() - start) });
       return res;
     } catch (err) {
-      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start), timedOut: isTimeoutError(err) });
       throw err;
     }
   };
@@ -580,7 +614,7 @@ export interface InstrumentResult {
  * Auto-detect and patch all installed database libraries.
  * Called once when the middleware initializes.
  */
-export function autoInstrument(includeOutbound = false): InstrumentResult {
+export function autoInstrument(includeOutbound = false, includeLlm = true): InstrumentResult {
   const patchers: Array<[string, () => boolean]> = [
     ['pg',              patchPg],
     ['mysql2',          patchMysql2],
@@ -609,6 +643,10 @@ export function autoInstrument(includeOutbound = false): InstrumentResult {
     try { if (patchAxios())  patched.push('axios');  } catch {}
     try { if (patchFetch())  patched.push('fetch');  } catch {}
     try { if (patchUndici()) patched.push('undici'); } catch {}
+  }
+
+  if (includeLlm) {
+    patched.push(...autoInstrumentLlm());
   }
 
   return { patched, total: patched.length };

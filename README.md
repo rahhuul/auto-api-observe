@@ -275,6 +275,7 @@ No code changes to your queries. The middleware patches these libraries at start
 | **ioredis** | Command, execution time |
 | **better-sqlite3** | SQL query, execution time |
 | **node-redis** | Command, execution time |
+| **Drizzle ORM** | SQL query, execution time — via `drizzle-orm/node-postgres`, `drizzle-orm/mysql2`, or `drizzle-orm/better-sqlite3` (not yet `drizzle-orm/postgres-js`) |
 
 For each query: masked SQL (values replaced with `?`), execution time, source library, and per-request aggregates.
 
