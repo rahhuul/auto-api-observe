@@ -583,6 +583,59 @@ function patchUndici(): boolean {
   return true;
 }
 
+/**
+ * node-fetch v2's `module.exports` IS the fetch function itself (not an
+ * object with a `.fetch` property like undici) — `.default` and
+ * `.Headers`/`.Request`/`.Response` are just properties attached to that
+ * same function. That means this patch only takes effect for code that
+ * requires('node-fetch') *after* this has run, or that re-reads `.default`
+ * on every call instead of caching it in a local variable — a consumer
+ * that already did `const fetch = require('node-fetch')` before
+ * autoInstrument() ran keeps its own reference to the original, unpatched
+ * function, the same limitation that defers drizzle-orm/postgres-js
+ * support (no shared prototype to patch; everything is a captured closure).
+ */
+function patchNodeFetch(): boolean {
+  const nodeFetch = tryRequire('node-fetch') as (AnyFn & { __apilens?: boolean; default?: AnyFn }) | null;
+  if (typeof nodeFetch !== 'function' || nodeFetch.__apilens) return false;
+
+  const original = nodeFetch;
+
+  const patched = async function patchedNodeFetch(...args: unknown[]): Promise<unknown> {
+    const start  = performance.now();
+    const input  = args[0];
+    const init   = args[1] as Record<string, unknown> | undefined;
+    const method = String(init?.method ?? 'GET').toUpperCase();
+    const url    = typeof input === 'string' ? input : String((input as Record<string, unknown>)?.href ?? (input as Record<string, unknown>)?.url ?? input);
+
+    try {
+      const res = await original(...args) as Record<string, unknown>;
+      recordOutboundCall({ method, url: maskUrl(url), status: Number(res.status ?? 0), latency: Math.round(performance.now() - start) });
+      return res;
+    } catch (err) {
+      recordOutboundCall({ method, url: maskUrl(url), status: 0, latency: Math.round(performance.now() - start) });
+      throw err;
+    }
+  } as AnyFn & Record<string, unknown>;
+
+  Object.assign(patched, original); // carry over Headers/Request/Response/FetchError/AbortError
+  patched.default = patched;
+  patched.__apilens = true;
+
+  // Best-effort: update the live require cache entry so a *subsequent*
+  // require('node-fetch') elsewhere in the process picks up the patched
+  // function instead of the original.
+  try {
+    const resolved = require.resolve('node-fetch');
+    const cached = require.cache[resolved];
+    if (cached) cached.exports = patched;
+  } catch {
+    // ignore — best effort only
+  }
+
+  return true;
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export interface InstrumentResult {
@@ -622,7 +675,8 @@ export function autoInstrument(includeOutbound = false): InstrumentResult {
   if (includeOutbound) {
     try { if (patchAxios())  patched.push('axios');  } catch {}
     try { if (patchFetch())  patched.push('fetch');  } catch {}
-    try { if (patchUndici()) patched.push('undici'); } catch {}
+    try { if (patchUndici())    patched.push('undici');     } catch {}
+    try { if (patchNodeFetch()) patched.push('node-fetch'); } catch {}
   }
 
   return { patched, total: patched.length };
