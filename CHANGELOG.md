@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.5.0] — 2026-10-14
+
+### Added
+- **Drizzle ORM support** — queries made through `drizzle-orm/node-postgres`, `drizzle-orm/mysql2`, or `drizzle-orm/better-sqlite3` are now captured transparently, the same way Knex/Prisma/Sequelize already are: Drizzle calls straight into the already-patched `pg`/`mysql2`/`better-sqlite3` driver methods under the hood, so no dedicated Drizzle patcher was needed — verified empirically against all three driver combinations. `drizzle-orm/postgres-js` (the `postgres` package) is not yet covered — it has no shared prototype to patch (every client is built from closures), so it would need a `require.cache`-level hijack instead of the prototype-patch approach used everywhere else here.
+- **Real, reproducible overhead benchmark** (`benchmark/`) — replaces previously unverified "under 0.3ms" / "under 1ms" claims with a measured number: roughly **1.1–1.5ms average overhead per request** (autocannon, 50 concurrent connections, baseline vs. instrumented Express app), throughput unaffected. Full methodology, both server scripts, and rerun instructions are in the repo so the number isn't "trust me" — it's reproducible in about two minutes.
+
+### Fixed
+- **`maskSqlValues()` was masking double-quoted SQL identifiers as if they were string values** — double quotes delimit identifiers (`"users"`, `"id"`) in every dialect this package targets (Postgres, SQLite, MySQL ANSI mode), not values, so this previously turned every Drizzle-generated query into nonsense like `select "?", "?" from "?"`. Only single-quoted string literals are masked now.
+
+---
+
 ## [1.4.1] — 2026-08-27
 
 ### Added
